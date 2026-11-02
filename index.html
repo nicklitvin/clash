@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Clash</title>
-<meta name="description" content="A single-player, defense-only village game in 8-bit pixel art. Build at night, survive a raid every day.">
+<meta name="description" content="A single-player, defense-only village game in 8-bit pixel art. Build by day, survive a raid every night.">
 <meta name="theme-color" content="#121a33">
 <meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes">
@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/pixelify-sans.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -24,9 +24,9 @@
 <div id="hud">
   <div class="top-left">
     <div class="phase" id="phase">
-      <div class="icon-wrap"><canvas class="ico" id="phaseIcon" width="12" height="12" style="width:28px;height:28px"></canvas></div>
+      <div class="icon-wrap"><canvas class="ico" id="phaseIcon" width="12" height="12" style="width:26px;height:26px"></canvas></div>
       <div>
-        <div class="phase-title ol" id="phaseTitle">NIGHT 1</div>
+        <div class="phase-title ol" id="phaseTitle">DAY 1</div>
         <div class="phase-sub" id="phaseSub"></div>
       </div>
     </div>
@@ -36,43 +36,48 @@
   <div class="top-right">
     <div class="res gold" id="resGold" title="Gold">
       <canvas class="ico" data-icon="gold" width="12" height="12"></canvas>
-      <div class="cap" id="goldCap"></div>
       <div class="track"><div class="fill" id="goldFill"></div><div class="amount ol" id="goldAmt">0</div></div>
+      <div class="cap" id="goldCap"></div>
     </div>
     <div class="res elixir" id="resElixir" title="Elixir">
       <canvas class="ico" data-icon="elixir" width="12" height="12"></canvas>
-      <div class="cap" id="elixirCap"></div>
       <div class="track"><div class="fill" id="elixirFill"></div><div class="amount ol" id="elixirAmt">0</div></div>
+      <div class="cap" id="elixirCap"></div>
     </div>
   </div>
 
+  <div class="zoom">
+    <button class="btn round mini-round" id="zoomIn" aria-label="Zoom in" title="Zoom in (+)"><canvas class="ico" data-icon="plus" width="12" height="12" style="width:16px;height:16px"></canvas></button>
+    <button class="btn round mini-round" id="zoomOut" aria-label="Zoom out" title="Zoom out (-)"><canvas class="ico" data-icon="minus" width="12" height="12" style="width:16px;height:16px"></canvas></button>
+  </div>
+
   <div class="wave ol" id="wave" hidden>
-    <canvas class="ico" data-icon="sword" width="12" height="12" style="width:20px;height:20px"></canvas>
+    <canvas class="ico" data-icon="sword" width="12" height="12" style="width:18px;height:18px"></canvas>
     <span id="waveText">ENEMIES 0</span>
   </div>
 
   <div class="bottom-left">
-    <button class="btn round" id="zoomIn" aria-label="Zoom in"><canvas class="ico" data-icon="plus" width="12" height="12" style="width:20px;height:20px"></canvas></button>
-    <button class="btn round" id="zoomOut" aria-label="Zoom out"><canvas class="ico" data-icon="minus" width="12" height="12" style="width:20px;height:20px"></canvas></button>
+    <button class="btn go square" id="repairAllBtn" hidden><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:22px;height:22px"></canvas><span class="sq-label">Repair</span><span class="sq-cost" id="repairAllText">0</span></button>
+    <button class="btn war square big" id="defendBtn" aria-label="Start the night"><canvas class="ico" data-icon="moon" width="12" height="12" style="width:28px;height:28px"></canvas><span class="sq-label">Fight</span></button>
   </div>
 
   <div class="bottom-right">
     <button class="btn round wood" id="speedBtn" hidden aria-label="Game speed">x1</button>
-    <button class="btn shop-btn" id="shopBtn"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:36px;height:36px"></canvas><span>SHOP</span></button>
+    <button class="btn square big" id="shopBtn" aria-label="Shop"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:30px;height:30px"></canvas><span class="sq-label">Shop</span></button>
   </div>
 
   <div class="bottom-center">
     <div class="sel" id="sel" hidden></div>
     <div class="spells" id="spellBar" hidden aria-label="Spells"></div>
+    <div class="place-tip" id="placeTip" hidden></div>
     <div class="place-bar" id="placeBar" hidden>
       <button class="btn no" id="placeNo" aria-label="Cancel">&#x2716;</button>
-      <button class="btn go" id="placeOk" aria-label="Place here">&#x2714;</button>
+      <button class="btn go" id="placeOk" aria-label="Build">&#x2714;</button>
     </div>
-    <button class="btn go repair-all" id="repairAllBtn" hidden><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:18px;height:18px"></canvas><span id="repairAllText">REPAIR ALL</span></button>
-    <button class="btn war defend-btn" id="defendBtn"><canvas class="ico" data-icon="sword" width="12" height="12" style="width:22px;height:22px"></canvas><span id="defendText">START DAY 1</span></button>
   </div>
 </div>
 
+<div class="banner" id="banner" hidden></div>
 <div class="modal" id="modal" hidden></div>
 <div class="toast ol" id="toast"></div>
 

@@ -1,9 +1,9 @@
 // Caches the game so it opens offline once it has been loaded.
 // Bump VERSION whenever a file changes so players get the update.
-const VERSION = 'clash-v1.2.0';
+const VERSION = 'clash-v0.4.0';
 const FILES = [
   './', 'index.html', 'style.css', 'game.js', 'manifest.webmanifest',
-  'fonts/press-start-2p.woff2', 'fonts/silkscreen-400.woff2', 'fonts/silkscreen-700.woff2',
+  'fonts/pixelify-sans.woff2',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 

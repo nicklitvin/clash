@@ -1,7 +1,7 @@
 # Clash
 
 A single-player, defense-only village game in 8-bit pixel art.
-Build at night. Survive a raid every day. How many days can you last?
+Build by day. Survive a raid every night. How many nights can you last?
 
 ## Play
 
@@ -16,19 +16,23 @@ screen and works offline.
 
 ## How it works
 
-- **Night:** build and upgrade. Bigger projects take 1–3 days to finish, and
-  each Builder's Hut runs one project at a time.
-- **Day:** a wave attacks. Your defenses fight on their own, and you can cast
-  spells (Lightning, Freeze, Heal) for elixir: tap a spell, then tap the map.
-  Keys 1–3 pick a spell on a keyboard.
-- Survive and night falls straight away, with your income added.
+- **Day: build.** Build and upgrade. Everything except walls takes at least a
+  day and needs a free builder (one per Builder's Hut). Walls go up instantly:
+  tap or drag to lay many at once, then confirm to buy them all.
+- **Night: fight.** A wave attacks in the dark. Your defenses fight on their own.
+- After each night, a summary shows what your Gold Mines and Elixir Collectors
+  earned before you start the next day.
 - Tap any building to see its stats, repair it or upgrade it. Damage stays
-  after a raid until you pay gold to repair it, and you can repair mid-raid.
-  **Repair All** fixes everything at once. Upgrades start at night.
+  until you pay gold to repair it, and you can repair mid-raid. **Repair** in
+  the bottom left fixes everything at once.
+- **Spells (Town Hall 4):** build a Spell Factory, brew Lightning, Heal and
+  Freeze by day, and cast them at night (tap a spell, then tap the map; keys
+  1–3 also work).
+- Zoom with the + / − buttons, the mouse wheel, the keyboard or a pinch.
 - The moment your Town Hall falls, the game is over. The village saves itself
-  every night.
-- The whole game is flat 2D, seen from above, with no shading or depth. Tap the version number in the top
-  left to read the patch notes.
+  every day.
+- Flat 2D pixel art: the map is seen from above, and buildings are drawn from
+  the side. Tap the version number in the top left to read the patch notes.
 
 ## Files
 
@@ -38,7 +42,7 @@ style.css              interface styles
 game.js                the whole game: simulation, pixel renderer, UI, sound
 manifest.webmanifest   home-screen install info
 sw.js                  offline cache (bump VERSION when files change)
-fonts/                 Press Start 2P and Silkscreen (SIL Open Font License)
+fonts/                 Pixelify Sans (SIL Open Font License)
 icons/                 app icons
 ```
 

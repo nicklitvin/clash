@@ -1,7 +1,7 @@
 'use strict';
 /* =====================================================================
    CLASH: a single-player, defense-only village game.
-   Night: build and upgrade. Day: a wave attacks. Survive as many days
+   Day: build and upgrade. Night: a wave attacks. Survive as many nights
    as you can. Everything in the world is drawn on a low-resolution
    canvas with integer rectangles, then scaled up, so it stays 8-bit.
    ===================================================================== */
@@ -22,7 +22,7 @@ const TYPES = {
     desc: 'The heart of your village. Upgrade it to unlock more buildings. If it falls, the village is lost.' },
   cannon: { name: 'Cannon', size: 3, cat: 'defense', max: 4,
     hp: [450, 560, 680, 820], dmg: [12, 16, 21, 27], rate: 0.8, range: 8.5, ground: true, air: false,
-    cost: [[250, 0, 0], [1000, 0, 1], [3000, 0, 1], [8000, 0, 2]],
+    cost: [[250, 0, 1], [1000, 0, 1], [3000, 0, 1], [8000, 0, 2]],
     desc: 'Fires heavy shots at ground troops. Cannot hit dragons.' },
   archer: { name: 'Archer Tower', size: 3, cat: 'defense', max: 4,
     hp: [400, 480, 580, 700], dmg: [8, 11, 14, 18], rate: 0.55, range: 10, ground: true, air: true,
@@ -42,34 +42,40 @@ const TYPES = {
     desc: 'Slows attackers down. Wall Breakers love them.' },
   goldmine: { name: 'Gold Mine', size: 3, cat: 'resource', res: 'gold', max: 4,
     hp: [400, 480, 560, 640], prod: [450, 750, 1100, 1500],
-    cost: [[0, 150, 0], [0, 500, 1], [0, 1500, 1], [0, 4000, 2]],
-    desc: 'Digs up gold every day it is working.' },
+    cost: [[0, 150, 1], [0, 500, 1], [0, 1500, 1], [0, 4000, 2]],
+    desc: 'Digs up gold every night it is working.' },
   elixir: { name: 'Elixir Collector', size: 3, cat: 'resource', res: 'elixir', max: 4,
     hp: [400, 480, 560, 640], prod: [450, 750, 1100, 1500],
-    cost: [[150, 0, 0], [500, 0, 1], [1500, 0, 1], [4000, 0, 2]],
-    desc: 'Pumps elixir every day it is working.' },
+    cost: [[150, 0, 1], [500, 0, 1], [1500, 0, 1], [4000, 0, 2]],
+    desc: 'Pumps elixir every night it is working.' },
   goldstore: { name: 'Gold Storage', size: 3, cat: 'resource', res: 'gold', max: 4,
     hp: [600, 800, 1000, 1300], store: [1500, 3500, 7000, 15000],
-    cost: [[0, 300, 0], [0, 1200, 1], [0, 3500, 1], [0, 8000, 2]],
+    cost: [[0, 300, 1], [0, 1200, 1], [0, 3500, 1], [0, 8000, 2]],
     desc: 'Holds more gold. Goblins go straight for it.' },
   elixstore: { name: 'Elixir Storage', size: 3, cat: 'resource', res: 'elixir', max: 4,
     hp: [600, 800, 1000, 1300], store: [1500, 3500, 7000, 15000],
-    cost: [[300, 0, 0], [1200, 0, 1], [3500, 0, 1], [8000, 0, 2]],
+    cost: [[300, 0, 1], [1200, 0, 1], [3500, 0, 1], [8000, 0, 2]],
     desc: 'Holds more elixir. Goblins go straight for it.' },
   builder: { name: "Builder's Hut", size: 2, cat: 'other', max: 1,
-    hp: [250], cost: [[1000, 0, 0]],
+    hp: [250], cost: [[1000, 0, 1]],
     desc: 'Each hut gives you one builder. Builders work on one project at a time.' },
+  spellfactory: { name: 'Spell Factory', size: 3, cat: 'special', max: 3,
+    hp: [900, 1050, 1200], slots: [2, 3, 4],
+    cost: [[0, 12000, 2], [0, 24000, 3], [0, 40000, 3]],
+    desc: 'Brews spells during the day. Cast them at night to protect your village. Unlocks at Town Hall 4.' },
 };
 // how many of each a Town Hall level allows (index = TH level - 1)
 const LIMITS = {
   cannon: [2, 2, 3, 4, 5], archer: [2, 2, 3, 4, 5], mortar: [0, 1, 1, 2, 3], airdef: [0, 0, 1, 1, 2],
   wall: [25, 50, 75, 100, 125], goldmine: [2, 3, 4, 5, 6], elixir: [2, 3, 4, 5, 6],
   goldstore: [1, 1, 2, 2, 3], elixstore: [1, 1, 2, 2, 3], builder: [3, 3, 4, 4, 5], townhall: [1, 1, 1, 1, 1],
+  spellfactory: [0, 0, 0, 1, 1],
 };
 const BUILDER_COSTS = [0, 0, 1000, 3000, 6000]; // price of hut #1..#5
 const SHOP_TABS = [
   ['defense', 'DEFENSE', ['cannon', 'archer', 'mortar', 'airdef', 'wall']],
   ['resource', 'RESOURCES', ['goldmine', 'elixir', 'goldstore', 'elixstore', 'builder']],
+  ['special', 'ADVANCED', ['spellfactory']],
 ];
 
 const UNITS = {
@@ -82,41 +88,51 @@ const UNITS = {
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '1.2.0';
+const GAME_VERSION = '0.4.0';
 const PATCH_NOTES = [
-  { v: '1.2.0', date: 'Nov 2, 2026', notes: [
-    'Fully flat 2D: no more shading, shadows, flying height or raised buttons.',
-    'Tap any building, day or night, to see its health, stats and what the next level gives.',
-    'New: Repair. Damage now stays after a raid. Repairs cost gold and can be done mid-raid too.',
-    'New: Repair All button fixes every damaged building in one tap.',
+  { v: '0.4.0', date: 'Nov 2, 2026', notes: [
+    'Day and night swapped: build by day, fight by night. Night is dark so you always know which is which.',
+    'After each night, a summary shows what your Gold Mines and Elixir Collectors earned before the next day starts.',
+    'Buildings are now drawn from the side instead of from above.',
+    'New font: easier to read, same pixel style.',
+    'Everything except walls takes at least a day to build and needs a free builder.',
+    'Walls: tap or drag to lay many at once, then confirm to buy them all together.',
+    'A tip bar at the bottom shows what you are placing, its price and how to place it.',
+    'Zoom in and out with the + and - buttons, the mouse wheel or a pinch.',
+    'Spells are now brewed by day at the new Spell Factory (Town Hall 4), then cast at night.',
+    'Smaller building panel and corner buttons, so they no longer cover the village.',
+    'Version numbers now start at 0.',
+  ] },
+  { v: '0.3.0', date: 'Nov 2, 2026', notes: [
+    'Flat 2D look with no shading, shadows or raised buttons.',
+    'Tap any building to see its health, stats and what the next level gives.',
+    'New: Repair and Repair All. Damage stays after a raid until you repair it.',
     'Fixed: buttons in the building panel could ignore taps during a raid.',
-    'Upgrades still start at night. During a raid the panel shows the price so you can plan.',
     'Removed the sound button and the pause menu.',
   ] },
-  { v: '1.1.0', date: 'Nov 2, 2026', notes: [
-    'The whole game is now flat 2D, seen straight from above.',
-    'New: spells during the day. Tap a spell, then tap the map to cast it.',
-    'Lightning hits every raider in the blast. Freeze stops raiders in their tracks. Heal patches up your buildings.',
-    'Spells cost elixir and need a few seconds to recharge.',
-    'No more star rating after a raid. Surviving takes you straight to night with a short summary.',
+  { v: '0.2.0', date: 'Nov 2, 2026', notes: [
+    'The game is now 2D, seen straight from above.',
+    'New: Lightning, Freeze and Heal spells during raids.',
+    'No more star rating after a raid.',
     'The run ends the moment your Town Hall is destroyed.',
     'Tap the version number to read these notes.',
   ] },
-  { v: '1.0.0', date: 'Oct 2026', notes: [
-    'First release: build at night, survive a raid every day.',
+  { v: '0.1.0', date: 'Oct 2026', notes: [
+    'First release: build your village and survive a raid every round.',
     'Cannons, Archer Towers, Mortars, Air Defenses and Walls.',
     'Barbarians, Archers, Goblins, Giants, Wall Breakers and Dragons.',
   ] },
 ];
 
-// ---------- spells, cast during the day ----------
+// ---------- spells: brewed by day at the Spell Factory, cast at night ----------
+// cost is elixir to brew one; lvl is the Spell Factory level that unlocks it
 const SPELLS = {
-  lightning: { name: 'Lightning', icon: 'bolt', cost: 150, cd: 6, radius: 2, color: '#a8e0ff',
+  lightning: { name: 'Lightning', icon: 'bolt', cost: 1200, lvl: 1, cd: 1.5, radius: 2, color: '#a8e0ff',
     dmg: () => 90 + (thLevel() - 1) * 45, desc: 'Strikes every raider in the area.' },
-  freeze: { name: 'Freeze', icon: 'snow', cost: 250, cd: 14, radius: 2.5, color: '#7cd8f8', dur: 4,
-    desc: 'Raiders in the area stop moving and attacking for 4 seconds.' },
-  heal: { name: 'Heal', icon: 'heart', cost: 200, cd: 10, radius: 3, color: '#6fe03a',
+  heal: { name: 'Heal', icon: 'heart', cost: 1500, lvl: 1, cd: 1.5, radius: 3, color: '#6fe03a',
     desc: 'Restores 40% health to standing buildings in the area.' },
+  freeze: { name: 'Freeze', icon: 'snow', cost: 2000, lvl: 2, cd: 1.5, radius: 2.5, color: '#7cd8f8', dur: 4,
+    desc: 'Raiders in the area stop moving and attacking for 4 seconds.' },
 };
 
 // ---------- tiny helpers ----------
@@ -130,15 +146,15 @@ const T = 12;              // pixels per tile on the low-res canvas (flat, top-d
 // ---------- state ----------
 let S = null;            // persistent village state
 let units = [], shots = [], fx = [], texts = [], spawnQueue = [], flags = [];
-let dayTime = 0, dayStats = null, speed = 1;
+let raidTime = 0, raidStats = null, speed = 1;
+let buildTimer = 0;
 let selectedId = null, placing = null;  // placing: {type, x, y, moveId, ok}
 let fieldCache = new Map(), fieldVersion = 0;
 let blocked = new Int32Array(N * N);   // 0 free, building id otherwise
 let spellArmed = null, hover = null, spellCd = { lightning: 0, freeze: 0, heal: 0 };
-let nightTimer = 0, nightSummary = '';
 
 function newGame() {
-  S = { day: 1, phase: 'night', gold: 1000, elixir: 1000, nextId: 1, buildings: [], over: false };
+  S = { day: 1, phase: 'build', gold: 1000, elixir: 1000, nextId: 1, buildings: [], over: false, spells: { lightning: 0, heal: 0, freeze: 0 } };
   add('townhall', 13, 13, 1);
   add('cannon', 9, 14, 1);
   add('archer', 18, 11, 1);
@@ -181,7 +197,7 @@ function capOf(res) {
 }
 function gain(res, amount) { S[res] = clamp(S[res] + amount, 0, capOf(res)); }
 function priceOf(type, lvl) {
-  if (type === 'builder') return [BUILDER_COSTS[countOf('builder')] ?? 99999, 0, 0];
+  if (type === 'builder') return [BUILDER_COSTS[countOf('builder')] ?? 99999, 0, 1];
   return TYPES[type].cost[lvl - 1];
 }
 function canAfford(p) { return S.gold >= p[0] && S.elixir >= p[1]; }
@@ -196,6 +212,8 @@ function load() {
     if (!raw) return false;
     const s = JSON.parse(raw);
     if (!s || !Array.isArray(s.buildings) || s.over) return false;
+    s.phase = 'build';   // saves are only made while building (older saves called it 'night')
+    s.spells = Object.assign({ lightning: 0, heal: 0, freeze: 0 }, s.spells || {});
     S = s;
     return true;
   } catch (e) { return false; }
@@ -330,17 +348,17 @@ function edgePoint() {
 }
 
 // ---------- day / night ----------
-function startDay() {
-  if (S.phase !== 'night' || placing) return;
+function startRaid() {
+  if (S.phase !== 'build' || placing) return;
   deselect();
-  S.phase = 'day';
+  S.phase = 'raid';
   units = []; shots = []; fx = []; texts = []; spawnQueue = []; flags = [];
-  dayTime = 0;
+  raidTime = 0;
   spellArmed = null; for (const k in spellCd) spellCd[k] = 0;
-  dayStats = { stolenGold: 0, stolenElixir: 0, kills: 0, total: 0, startCount: S.buildings.filter((b) => b.type !== 'wall').length };
+  raidStats = { stolenGold: 0, stolenElixir: 0, kills: 0, total: 0, startCount: S.buildings.filter((b) => b.type !== 'wall').length };
   rebuildBlocked();
   const list = waveFor(S.day);
-  dayStats.total = list.length;
+  raidStats.total = list.length;
   const groups = clamp(1 + Math.floor(S.day / 4), 1, 3);
   const points = Array.from({ length: groups }, edgePoint);
   flags = points.map((p) => ({ ...p }));
@@ -350,6 +368,7 @@ function startDay() {
   });
   spawnQueue.sort((a, b) => a.at - b.at);
   sfx('horn');
+  banner(`NIGHT ${S.day}`, 'Defend your village!', 'night');
   refreshUI();
 }
 function spawnUnit(q) {
@@ -358,8 +377,8 @@ function spawnUnit(q) {
   units.push({ type: q.type, d, x: q.x, y: q.y, hp: d.hp * hpMul, maxhp: d.hp * hpMul, target: null, wall: null,
     next: null, cd: rnd(0, 0.4), dir: 1, walk: Math.random() * 6, flash: 0, ox: rnd(-0.25, 0.25), oy: rnd(-0.25, 0.25), z: d.air ? 10 : 0 });
 }
-function endDay(victory) {
-  if (S.phase !== 'day') return;
+function endRaid(victory) {
+  if (S.phase !== 'raid') return;
   spellArmed = null;
   canvas.classList.remove('aiming');
   if (!victory) {
@@ -373,28 +392,49 @@ function endDay(victory) {
     refreshUI();
     return;
   }
-  // survived: collect the day's income and roll straight into night (no rating screen)
+  // survived: after a short beat, show what the mines and collectors earned, then the player starts the day
   S.phase = 'won';
-  let gold = 0, elixir = 0;
-  for (const b of S.buildings) {
-    if (!active(b) || !def(b).prod) continue;
-    const amount = def(b).prod[b.lvl - 1];
-    if (def(b).res === 'gold') gold += amount; else elixir += amount;
-  }
-  const bonus = 200 + S.day * 90;
-  gold += bonus; elixir += bonus;
-  const before = { g: S.gold, e: S.elixir };
-  gain('gold', gold); gain('elixir', elixir);
   setBest(S.day);
   sfx('win');
-  const stolen = dayStats.stolenGold + dayStats.stolenElixir;
-  nightSummary = `Day ${S.day} survived! +${fmt(Math.max(0, S.gold - before.g))} gold, +${fmt(Math.max(0, S.elixir - before.e))} elixir` + (stolen ? ` · Goblins stole ${fmt(stolen)}` : '');
-  nightTimer = 1.2;
+  buildTimer = 1.2;
   refreshUI();
 }
-function startNight() {
+function nightIncome() {
+  const r = { mines: 0, mineGold: 0, pumps: 0, pumpElixir: 0, idle: 0 };
+  for (const b of S.buildings) {
+    if (!def(b).prod) continue;
+    if (!active(b)) { r.idle++; continue; }
+    const amount = def(b).prod[b.lvl - 1];
+    if (def(b).res === 'gold') { r.mines++; r.mineGold += amount; } else { r.pumps++; r.pumpElixir += amount; }
+  }
+  r.bonus = 200 + S.day * 90;
+  return r;
+}
+function showNightSummary() {
+  $('banner').hidden = true; clearTimeout(toastTimer); $('toast').classList.remove('show');
+  const r = nightIncome();
+  const before = { g: S.gold, e: S.elixir };
+  gain('gold', r.mineGold + r.bonus); gain('elixir', r.pumpElixir + r.bonus);
+  const gotG = S.gold - before.g, gotE = S.elixir - before.e;
+  const lostG = r.mineGold + r.bonus - gotG, lostE = r.pumpElixir + r.bonus - gotE;
+  const stolen = raidStats.stolenGold + raidStats.stolenElixir;
+  const hurt = damaged().length;
+  const row = (ico, label, val, cls) => `<div class="sum-row ${cls || ''}"><span data-ico="${ico}" data-px="18"></span><span class="sum-label">${label}</span><b>${val}</b></div>`;
+  popup(`NIGHT ${S.day} SURVIVED`, `
+    <p>You held off ${raidStats.total} raiders. Here is what your village earned:</p>
+    <div class="summary">
+      ${row('gold', `Gold Mines (${r.mines})`, '+' + fmt(r.mineGold))}
+      ${row('elixir', `Elixir Collectors (${r.pumps})`, '+' + fmt(r.pumpElixir))}
+      ${row('shield', 'Survival bonus', `+${fmt(r.bonus)} each`)}
+      ${stolen ? row('sword', 'Goblins stole', '-' + fmt(stolen), 'bad') : ''}
+      ${lostG + lostE > 0 ? row('clock', 'Storage full, lost', fmt(lostG + lostE), 'bad') : ''}
+      ${r.idle ? `<div class="sum-note">${r.idle} mine${r.idle > 1 ? 's or collectors were' : ' or collector was'} broken or upgrading and earned nothing.</div>` : ''}
+      ${hurt ? `<div class="sum-note">${hurt} building${hurt > 1 ? 's need' : ' needs'} repair.</div>` : ''}
+    </div>`, [[`START DAY ${S.day + 1}`, 'go', () => { closeModal(); startBuild(); }]]);
+}
+function startBuild() {
   S.day++;
-  S.phase = 'night';
+  S.phase = 'build';
   units = []; shots = []; texts = []; spawnQueue = []; flags = [];
   const done = [];
   for (const b of S.buildings) {
@@ -409,35 +449,29 @@ function startNight() {
   rebuildBlocked();
   save();
   refreshUI();
-  const msgs = [];
-  if (nightSummary) msgs.push(nightSummary);
-  nightSummary = '';
-  const hurt = damaged().length;
-  if (hurt) msgs.push(`${hurt} building${hurt > 1 ? 's need' : ' needs'} repair`);
-  if (done.length) msgs.push(done.length === 1 ? `${def(done[0]).name} is ready! (level ${done[0].lvl})` : `${done.length} projects finished!`);
-  if (msgs.length) toast(msgs.join(' · '), 3600);
+  banner(`DAY ${S.day}`, 'Build and upgrade', 'day');
+  if (done.length) toast(done.length === 1 ? `${def(done[0]).name} is ready! (level ${done[0].lvl})` : `${done.length} projects finished!`, 3000);
 }
 
 // ---------- simulation ----------
 function step(dt) {
   if (S.phase === 'won') {
     updateFx(dt);
-    nightTimer -= dt;
-    if (nightTimer <= 0) startNight();
+    if (buildTimer > 0) { buildTimer -= dt; if (buildTimer <= 0) showNightSummary(); }
     return;
   }
-  if (S.phase !== 'day') { updateFx(dt); return; }
-  dayTime += dt;
+  if (S.phase !== 'raid') { updateFx(dt); return; }
+  raidTime += dt;
   for (const k in spellCd) spellCd[k] = Math.max(0, spellCd[k] - dt);
-  while (spawnQueue.length && spawnQueue[0].at <= dayTime) spawnUnit(spawnQueue.shift());
+  while (spawnQueue.length && spawnQueue[0].at <= raidTime) spawnUnit(spawnQueue.shift());
   for (const b of S.buildings) if (active(b) && def(b).cat === 'defense') updateDefense(b, dt);
   for (const u of units) updateUnit(u, dt);
-  if (S.phase !== 'day') return;   // the Town Hall fell during this step
+  if (S.phase !== 'raid') return;   // the Town Hall fell during this step
   units = units.filter((u) => u.hp > 0);
   updateShots(dt);
   updateFx(dt);
-  if (S.phase !== 'day') return;
-  if (!spawnQueue.length && !units.length && dayTime > 3) endDay(true);
+  if (S.phase !== 'raid') return;
+  if (!spawnQueue.length && !units.length && raidTime > 3) endRaid(true);
 }
 
 function hurtBuilding(b, dmg, attacker) {
@@ -452,7 +486,7 @@ function hurtBuilding(b, dmg, attacker) {
     fx.push({ kind: 'boom', x: c.x, y: c.y, r: s * 0.9, t: 0, life: 0.45 });
     sfx(b.type === 'wall' ? 'hit' : 'boom');
     rebuildBlocked();
-    if (b.type === 'townhall') endDay(false);
+    if (b.type === 'townhall') endRaid(false);
   }
 }
 function steal(b, dmg) {
@@ -461,7 +495,7 @@ function steal(b, dmg) {
     const amount = Math.min(S[res], Math.round(dmg * 1.6));
     if (amount <= 0) return;
     S[res] -= amount;
-    if (res === 'gold') dayStats.stolenGold += amount; else dayStats.stolenElixir += amount;
+    if (res === 'gold') raidStats.stolenGold += amount; else raidStats.stolenElixir += amount;
     const c = center(b);
     floatText(c.x, c.y, '-' + amount, res === 'gold' ? '#f8c830' : '#e04ce8');
   };
@@ -491,7 +525,7 @@ function chooseTarget(u) {
 
 function updateUnit(u, dt) {
   u.flash = Math.max(0, u.flash - dt);
-  if (S.phase !== 'day') return;
+  if (S.phase !== 'raid') return;
   if (u.frozen > 0) { u.frozen -= dt; return; }
   u.cd -= dt;
   if (!u.target || u.target.destroyed) { u.target = chooseTarget(u); u.next = null; u.wall = null; }
@@ -617,7 +651,7 @@ function hurtUnit(u, dmg) {
   if (u.hp <= 0) return;
   u.hp -= dmg; u.flash = 0.1;
   if (u.hp <= 0) {
-    dayStats.kills++;
+    raidStats.kills++;
     burst(u.x, u.y, u.d.space > 4 ? 12 : 6, u.type === 'goblin' ? ['#58b838', '#2f7a1e'] : ['#f2b880', '#c03030', '#e8e8f0']);
     fx.push({ kind: 'ghost', x: u.x, y: u.y, t: 0, life: 0.9, z: u.z });
   }
@@ -626,10 +660,10 @@ function hurtUnit(u, dmg) {
 // ---------- spells ----------
 function castSpell(type, x, y) {
   const sp = SPELLS[type];
-  if (!sp || S.phase !== 'day') return false;
-  if (spellCd[type] > 0) { toast(`${sp.name} is recharging`); sfx('nope'); return false; }
-  if (S.elixir < sp.cost) { toast('Not enough elixir'); sfx('nope'); return false; }
-  S.elixir -= sp.cost;
+  if (!sp || S.phase !== 'raid') return false;
+  if (spellCd[type] > 0) return false;
+  if (!(S.spells[type] > 0)) { toast(`No ${sp.name} spells. Brew them by day at the Spell Factory.`); sfx('nope'); return false; }
+  S.spells[type]--;
   spellCd[type] = sp.cd;
   const inside = (u) => u.hp > 0 && Math.hypot(u.x - x, u.y - y) <= sp.radius;
   if (type === 'lightning') {
@@ -664,11 +698,10 @@ function castSpell(type, x, y) {
   return true;
 }
 function armSpell(type) {
-  if (S.phase !== 'day') return;
+  if (S.phase !== 'raid') return;
   const sp = SPELLS[type];
   if (spellArmed === type) { disarmSpell(); return; }
-  if (spellCd[type] > 0) { toast(`${sp.name} is recharging`); sfx('nope'); return; }
-  if (S.elixir < sp.cost) { toast('Not enough elixir'); sfx('nope'); return; }
+  if (!(S.spells[type] > 0)) { toast(`No ${sp.name} spells left`); sfx('nope'); return; }
   spellArmed = type;
   canvas.classList.add('aiming');
   deselect();
@@ -863,11 +896,6 @@ function sq(cx, cy, n, col) {            // flat square, n tiles across, centred
   const w = Math.round(n * T);
   rect(Math.round(cx - w / 2), Math.round(cy - w / 2), w, w, col);
 }
-function blk(cx, cy, n, fill) {          // flat square with a dark outline (no shading, no depth)
-  const w = Math.round(n * T), x = Math.round(cx - w / 2), y = Math.round(cy - w / 2);
-  rect(x - 1, y - 1, w + 2, w + 2, '#14101c');
-  rect(x, y, w, w, fill);
-}
 function circ(cx, cy, r, col) {
   cx = Math.round(cx); cy = Math.round(cy); g.fillStyle = col;
   for (let dy = -r; dy <= r; dy++) { const w = Math.floor(Math.sqrt(r * r - dy * dy) + 0.35); g.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
@@ -924,148 +952,189 @@ const textWidth = (s) => s.length * 4 - 1;
 const sx = (x) => Math.round(x * T - cam.x + W / 2);
 const sy = (x, y) => Math.round(y * T - cam.y + H / 2);
 
-// ---------- building art (top-down) ----------
+// ---------- building art (side view: every building is drawn from the front, standing on its footprint) ----------
 const LEVEL_TRIM = ['#b7b7c4', '#d8b878', '#8fc8f0', '#f8c830', '#f070f0'];
 const WALL_COLS = [['#b7b7c4', '#6f6f85'], ['#d8b878', '#8a6a32'], ['#7a7a96', '#3c3c52'], ['#f8d860', '#a87c10']];
+const INK = '#14101c';
+function orect(x, y, w, h, fill) {         // outlined flat rectangle
+  rect(x - 1, y - 1, w + 2, h + 2, INK);
+  rect(x, y, w, h, fill);
+}
+function tri(cx, baseY, halfW, h, col) {   // flat pixel triangle (roofs, mounds), outlined
+  const rows = (hw, hh, c, oy) => {
+    g.fillStyle = c;
+    for (let r = 0; r < hh; r++) {
+      const w = Math.max(1, Math.round(hw * (r + 1) / hh));
+      g.fillRect(Math.round(cx - w), Math.round(baseY - hh + r + oy), w * 2, 1);
+    }
+  };
+  rows(halfW + 1, h + 1, INK, 0);
+  rows(halfW, h, col, 0);
+}
+function ocirc(cx, cy, r, col) { circ(cx, cy, r + 1, INK); circ(cx, cy, r, col); }
+// how tall each building's art stands above its ground line, in pixels (for badges and HP bars)
+const artHeight = (b) => (b.destroyed ? 8 : b.lvl < 1 ? Math.min(26, def(b).size * 7) : b.type === 'wall' ? 15 : def(b).size * T + 4);
+
 function drawBuilding(b, cx, cy, opts) {
   const t = def(b), s = t.size, lvl = Math.max(1, b.lvl);
   const ghost = opts && opts.ghost;
-  const building = b.lvl < 1;            // brand-new construction site
-  if (!ghost) sq(cx, cy, s, b.type === 'wall' ? '#4a9628' : '#468f27');
-  if (b.destroyed) { drawRubble(cx, cy, s); return; }
-  if (building) { drawScaffold(cx, cy, s, b); return; }
+  const base = Math.round(cy + (s * T) / 2);   // ground line (the front edge of the footprint)
+  if (!ghost && !(opts && opts.noPad)) sq(cx, cy, s, '#4e9a2c');
+  if (b.destroyed) { drawRubble(cx, base, s); return; }
+  if (b.lvl < 1) { drawScaffold(cx, base, s, b); return; }
   const trim = LEVEL_TRIM[clamp(lvl - 1, 0, 4)];
-  const flash = b.flash > 0;
-  const F = (c) => (flash ? '#ffffff' : c);
+  const F = (c) => (b.flash > 0 ? '#ffffff' : c);
   switch (b.type) {
     case 'townhall': {
-      blk(cx, cy, 3.7, F('#a8a8b8'));
-      // corner towers
-      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) blk(cx + dx * 17, cy + dy * 17, 0.8, F('#8c8ca0'));
-      const roofs = [['#e0503c', '#8a2420'], ['#4a7ae0', '#203c88'], ['#58b838', '#2a6a16'], ['#3a3a4a', '#101018'], ['#f8c830', '#8a6608']][lvl - 1];
-      blk(cx, cy, 2.5, F(roofs[0]));
-      rect(cx - 14, cy - 1, 28, 2, F(roofs[1]));      // roof ridges
-      rect(cx - 1, cy - 14, 2, 28, F(roofs[1]));
-      rect(cx - 3, cy + 18, 6, 4, '#3a2010');         // door
-      rect(cx - 4, cy - 4, 8, 8, '#14101c'); rect(cx - 3, cy - 3, 6, 6, trim);
-      // flag
-      line(cx, cy, cx, cy - 10, '#3a2a18');
-      rect(cx + 1, cy - 10, 6, 4, '#e03a30'); rect(cx + 1, cy - 10, 6, 1, '#ff8a70');
+      const roofs = ['#e0503c', '#4a7ae0', '#58b838', '#3a3a4a', '#f8c830'];
+      orect(cx - 22, base - 6, 44, 6, F('#8c8ca0'));               // stone foundation
+      orect(cx - 20, base - 24, 40, 18, F('#e8d0a0'));             // plaster walls
+      for (const px of [-20, -7, 5, 18]) rect(cx + px, base - 24, 2, 18, F('#6b3f1f'));  // timber posts
+      rect(cx - 20, base - 15, 40, 2, F('#6b3f1f'));
+      orect(cx - 16, base - 22, 6, 5, '#3a5a9a'); orect(cx + 10, base - 22, 6, 5, '#3a5a9a');
+      orect(cx - 4, base - 15, 8, 9, '#5c3414');                   // door
+      tri(cx, base - 24, 25, 16, F(roofs[lvl - 1]));               // roof
+      rect(cx - 24, base - 25, 48, 2, trim);
+      line(cx, base - 40, cx, base - 50, '#3a2a18');               // flag
+      rect(cx + 1, base - 50, 7, 4, '#e03a30');
       break;
     }
     case 'cannon': {
-      blk(cx, cy, 2.6, F('#a0a0b2'));
-      circ(cx, cy, 10, F(trim));
-      circ(cx, cy, 8, F('#6b4a2a'));
-      const a = b.angle, kick = b.recoil ? 2 : 0;
-      const ex = cx + Math.cos(a) * (13 - kick), ey = cy + Math.sin(a) * (13 - kick);
-      line(cx, cy, ex, ey, F('#2a2a36'), 5);
-      line(cx, cy, ex, ey, F('#55556a'), 1);
-      circ(cx, cy, 5, F('#2a2a36'));
-      circ(Math.round(ex), Math.round(ey), 2, '#101018');
+      orect(cx - 15, base - 6, 30, 6, F('#a0a0b2'));
+      rect(cx - 15, base - 6, 30, 1, trim);
+      orect(cx - 8, base - 13, 16, 7, F('#8a5226'));               // carriage
+      const d = Math.cos(b.angle) >= 0 ? 1 : -1, kick = b.recoil ? 2 : 0;
+      const ex = cx + d * (15 - kick), ey = base - 19;
+      line(cx - d * 3, base - 14, ex, ey, INK, 7);
+      line(cx - d * 3, base - 14, ex, ey, F('#2a2a36'), 5);
+      ocirc(Math.round(ex), Math.round(ey), 2, '#101018');
+      for (const wx of [-5, 5]) { ocirc(cx + wx, base - 5, 3, F('#5c3414')); rect(cx + wx, base - 5, 1, 1, '#c98a4b'); }
       break;
     }
     case 'archer': {
-      blk(cx, cy, 2.6, F('#c98a4b'));
-      for (let i = 0; i < 5; i++) rect(cx - 14, cy - 12 + i * 6, 28, 1, F('#9c6233'));
-      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) rect(cx + dx * 12 - 2, cy + dy * 12 - 2, 5, 5, F('#5c3414'));
-      rect(cx - 15, cy + 13, 30, 2, trim);
+      for (const px of [-13, 10]) orect(px + cx, base - 24, 3, 24, F('#7a4a22'));   // legs
+      line(cx - 11, base - 2, cx + 10, base - 22, F('#5c3414'), 1);
+      line(cx + 10, base - 2, cx - 11, base - 22, F('#5c3414'), 1);
+      orect(cx - 16, base - 29, 32, 5, F('#c98a4b'));              // platform
+      rect(cx - 15, base - 25, 30, 1, trim);
       const ac = spriteCanvas('arch', Math.cos(b.angle) < 0, null);
-      g.drawImage(ac, Math.round(cx - ac.width / 2), Math.round(cy - ac.height / 2));
+      g.drawImage(ac, Math.round(cx - ac.width / 2), Math.round(base - 29 - ac.height + 2));
+      rect(cx - 16, base - 34, 2, 5, F('#7a4a22')); rect(cx + 14, base - 34, 2, 5, F('#7a4a22'));
+      rect(cx - 16, base - 34, 32, 2, F('#7a4a22'));               // railing in front of the archer
       break;
     }
     case 'mortar': {
-      blk(cx, cy, 2.6, F('#b0b0c0'));
-      const kick = b.recoil ? 1 : 0;
-      circ(cx, cy, 11, trim);
-      circ(cx, cy, 10, F('#3a3a48'));
-      circ(cx, cy, 8 + kick, F('#30303c'));
-      circ(cx, cy, 5, '#0e0e14');
+      orect(cx - 14, base - 8, 28, 8, F('#b0b0c0'));
+      rect(cx - 14, base - 8, 28, 1, trim);
+      const lift = b.recoil ? 1 : 0;
+      orect(cx - 8, base - 19 - lift, 16, 11, F('#30303c'));       // squat barrel pointing up
+      orect(cx - 9, base - 22 - lift, 18, 3, F('#45455a'));
+      rect(cx - 7, base - 21 - lift, 14, 1, '#0e0e14');            // the mouth
+      rect(cx - 8, base - 14 - lift, 16, 2, trim);
       break;
     }
     case 'airdef': {
-      blk(cx, cy, 2.5, F('#a0a0b2'));
-      circ(cx, cy, 11, F('#34488a'));
-      circ(cx, cy, 9, F('#6a86c8'));
+      orect(cx - 13, base - 7, 26, 7, F('#a0a0b2'));
+      orect(cx - 6, base - 22, 12, 15, F('#4a64a8'));
+      rect(cx - 6, base - 15, 12, 2, trim);
       for (const dx of [-5, 0, 5]) {
-        rect(cx + dx - 1, cy - 6, 3, 11, F('#e8e8f0'));
-        rect(cx + dx - 1, cy - 8, 3, 2, F('#e03a30'));
+        orect(cx + dx - 1, base - 31, 3, 9, F('#e8e8f0'));
+        rect(cx + dx - 1, base - 33, 3, 2, F('#e03a30'));
       }
-      rect(cx - 9, cy + 9, 18, 2, F(trim));
       break;
     }
     case 'wall': {
-      const cols = WALL_COLS[lvl - 1];
-      blk(cx, cy, 0.8, F(cols[0]));
+      drawWallBlock(cx, base, lvl, F, false, false);
       break;
     }
     case 'goldmine': {
-      blk(cx, cy, 2.5, F('#9c6233'));
-      circ(cx, cy, 10, '#3a2412');
-      circ(cx - 3, cy - 1, 4, F('#f8c830')); circ(cx + 4, cy + 2, 3, F('#f8d860')); circ(cx, cy - 5, 3, F('#ffe890'));
-      rect(cx + 11, cy - 14, 2, 28, '#5c3414'); rect(cx + 7, cy - 14, 2, 28, '#5c3414'); // cart track
-      rect(cx - 14, cy + 12, 18, 2, trim);
+      tri(cx, base, 17, 22, F('#7a6a58'));                         // rocky hill
+      orect(cx - 6, base - 13, 12, 13, '#2a1a10');                 // mine entrance
+      rect(cx - 8, base - 14, 2, 14, F('#8a5226')); rect(cx + 6, base - 14, 2, 14, F('#8a5226'));
+      rect(cx - 9, base - 16, 18, 3, F('#8a5226'));
+      rect(cx - 9, base - 16, 18, 1, trim);
+      orect(cx + 7, base - 8, 9, 5, F('#5f5f75'));                 // ore cart
+      circ(cx + 9, base - 10, 2, F('#f8c830')); circ(cx + 13, base - 10, 2, F('#f8d860'));
+      ocirc(cx + 9, base - 2, 1, '#2a2a36'); ocirc(cx + 14, base - 2, 1, '#2a2a36');
       break;
     }
     case 'elixir': {
-      blk(cx, cy, 2.4, F('#a0a0b2'));
-      circ(cx, cy, 10, F('#8e2aa8'));
-      circ(cx, cy, 9, F('#e04ce8'));
-      rect(cx - 1, cy - 14, 3, 5, F('#5c3414'));
-      rect(cx - 13, cy + 12, 26, 2, trim);
+      orect(cx - 12, base - 6, 24, 6, F('#a0a0b2'));
+      rect(cx - 12, base - 6, 24, 1, trim);
+      rect(cx - 1, base - 14, 3, 8, F('#5c3414'));
+      ocirc(cx, base - 21, 8, F('#e04ce8'));                       // glass bulb
+      rect(cx - 8, base - 21, 16, 1, F('#8e2aa8'));
+      line(cx + 9, base - 7, cx + 15, base - 16, F('#5f5f75'), 2); // pump arm
       break;
     }
     case 'goldstore': {
-      blk(cx, cy, 2.7, F('#c98a4b'));
-      rect(cx - 12, cy - 12, 24, 24, F('#8a5226'));
-      for (let i = 0; i < 9; i++) circ(cx - 7 + (i % 3) * 7, cy - 7 + Math.floor(i / 3) * 7, 3, F(i % 2 ? '#f8d860' : '#e8b020'));
-      rect(cx - 15, cy - 1, 30, 2, F('#5c3414'));
-      rect(cx - 2, cy - 2, 4, 4, trim);
+      for (let i = 0; i < 7; i++) circ(cx - 10 + i * 3.3, base - 22 + (i % 2), 3, F(i % 2 ? '#f8d860' : '#e8b020'));
+      orect(cx - 15, base - 16, 30, 16, F('#8a5226'));             // chest
+      orect(cx - 16, base - 20, 32, 4, F('#a86a32'));              // lid
+      rect(cx - 11, base - 16, 2, 16, F('#5c3414')); rect(cx + 9, base - 16, 2, 16, F('#5c3414'));
+      orect(cx - 2, base - 13, 4, 4, trim);
       break;
     }
     case 'elixstore': {
-      blk(cx, cy, 2.6, F('#a0a0b2'));
-      circ(cx, cy, 13, F('#6b2a80'));
-      circ(cx, cy, 12, F('#c03cd0'));
-      rect(cx - 12, cy - 1, 24, 2, F('#6b2a80'));
-      rect(cx - 2, cy - 2, 4, 4, trim);
+      orect(cx - 13, base - 6, 26, 6, F('#a0a0b2'));
+      ocirc(cx, base - 19, 12, F('#c03cd0'));                      // big tank
+      rect(cx - 12, base - 19, 24, 2, F('#6b2a80'));
+      orect(cx - 3, base - 34, 6, 3, F('#6b2a80'));
+      rect(cx - 12, base - 6, 24, 1, trim);
       break;
     }
     case 'builder': {
-      blk(cx, cy, 1.8, F('#e0503c'));
-      rect(cx - 9, cy - 1, 18, 2, F('#b8362a'));
-      rect(cx + 4, cy - 9, 3, 4, F('#5c3414'));   // chimney
-      rect(cx - 2, cy + 8, 4, 3, '#3a2010');       // door
+      orect(cx - 9, base - 10, 18, 10, F('#c98a4b'));
+      orect(cx - 2, base - 7, 4, 7, '#3a2010');
+      rect(cx + 5, base - 21, 3, 6, F('#5c3414'));                 // chimney
+      tri(cx, base - 10, 12, 10, F('#e0503c'));
+      break;
+    }
+    case 'spellfactory': {
+      orect(cx - 15, base - 18, 30, 18, F('#8c8ca0'));             // stone hall
+      for (let i = 0; i < 3; i++) rect(cx - 15, base - 14 + i * 5, 30, 1, F('#6f6f85'));
+      ocirc(cx, base - 10, 4, F('#f070f8'));                       // glowing round window
+      tri(cx, base - 18, 17, 17, F('#7a4ad8'));                    // pointed roof
+      rect(cx - 16, base - 19, 32, 2, trim);
+      rect(cx - 1, base - 39, 2, 4, '#f8e070');                    // spire
+      orect(cx + 9, base - 6, 8, 6, F('#30303c'));                 // bubbling cauldron
+      circ(cx + 13, base - 8, 1, '#f070f8');
       break;
     }
   }
-  if (b.cons) drawUpgradeBadge(cx, cy, s, b);
+  if (b.cons) drawUpgradeBadge(cx, base, b);
 }
-function drawRubble(cx, cy, s) {
-  sq(cx, cy, Math.max(0.75, s - 0.4), '#6a5a48');
-  const seed = Math.round(cx * 7 + cy * 13), half = s * T / 2 - 3;
+// a wall section seen from the front: bricks and battlements; joins sideways with wall neighbours
+function drawWallBlock(cx, base, lvl, F, joinL, joinR) {
+  const cols = WALL_COLS[clamp(lvl - 1, 0, 3)];
+  const x0 = cx - (joinL ? 6 : 5), x1 = cx + (joinR ? 6 : 5), h = 12;
+  orect(x0, base - h, x1 - x0, h, F(cols[0]));
+  rect(x0, base - 8, x1 - x0, 1, F(cols[1])); rect(x0, base - 4, x1 - x0, 1, F(cols[1]));
+  rect(cx - 1, base - 12, 1, 4, F(cols[1])); rect(cx + 2, base - 8, 1, 4, F(cols[1])); rect(cx - 3, base - 4, 1, 4, F(cols[1]));
+  for (const bx of [cx - 5, cx - 1, cx + 3]) orect(bx, base - h - 3, 2, 2, F(cols[0]));   // battlements
+}
+function drawRubble(cx, base, s) {
+  const half = Math.round((s * T) / 2) - 3, seed = Math.round(cx * 7 + base * 13);
   for (let i = 0; i < 4 + s * 3; i++) {
-    const ox = ((seed + i * 97) % 100) / 100 * 2 - 1, oy = ((seed + i * 31) % 100) / 100 * 2 - 1;
-    rect(cx + ox * half - 1, cy + oy * half - 1, 3, 2, i % 2 ? '#8f8fa3' : '#4a3a28');
+    const ox = ((seed + i * 97) % 100) / 100 * 2 - 1, r = 1 + ((seed + i * 31) % 3);
+    ocirc(cx + ox * half, base - r - 1, r, i % 2 ? '#8f8fa3' : '#6a5a48');
   }
 }
-function drawScaffold(cx, cy, s, b) {
-  sq(cx, cy, s - 0.3, '#9b7a4a');
-  const h = Math.round(s * T / 2) - 3;
-  line(cx - h, cy - h, cx + h, cy + h, '#9c6233', 2);
-  line(cx + h, cy - h, cx - h, cy + h, '#9c6233', 2);
-  for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) rect(cx + dx * h - 2, cy + dy * h - 2, 4, 4, '#c98a4b');
-  rect(cx - 5, cy - 3, 10, 6, '#d8c49a'); rect(cx - 5, cy - 3, 10, 1, '#f0e0b8');
-  drawUpgradeBadge(cx, cy, s, b);
+function drawScaffold(cx, base, s, b) {
+  const w = Math.round((s * T) / 2) - 3, h = Math.min(26, s * 7);
+  orect(cx - w, base - 6, w * 2, 6, '#d8c49a');                     // the start of the walls
+  for (const px of [-w, 0, w - 2]) rect(cx + px, base - h, 2, h, '#9c6233');
+  rect(cx - w, base - h, w * 2, 2, '#9c6233');
+  line(cx - w, base - 6, cx + w - 2, base - h, '#9c6233', 1);
+  drawUpgradeBadge(cx, base, b);
 }
-function drawUpgradeBadge(cx, cy, s, b) {
+function drawUpgradeBadge(cx, base, b) {
   const label = b.cons.days + 'd';
-  const y = cy - (s * T / 2 + 11);
+  const y = base - artHeight(b) - 12;
   const w = textWidth(label) + 14;
-  rect(cx - w / 2 - 1, y - 1, w + 2, 10, '#14101c');
+  rect(cx - w / 2 - 1, y - 1, w + 2, 10, INK);
   rect(cx - w / 2, y, w, 8, '#f8c830');
-  // hammer
-  rect(cx - w / 2 + 2, y + 2, 4, 2, '#5f5f75'); rect(cx - w / 2 + 3, y + 4, 1, 3, '#7a4a22');
+  rect(cx - w / 2 + 2, y + 2, 4, 2, '#5f5f75'); rect(cx - w / 2 + 3, y + 4, 1, 3, '#7a4a22');   // hammer
   ptext(label, cx - w / 2 + 9, y + 2, '#ffffff');
 }
 function drawHpBar(cx, y, w, frac) {
@@ -1128,104 +1197,98 @@ function drawGround() {
 
 // ---------- the frame ----------
 function render(now) {
-  const night = S.phase === 'night';
-  // outside the map
+  const night = S.phase === 'raid' || S.phase === 'won' || S.phase === 'lost';
   g.fillStyle = '#1d3b14';
   g.fillRect(0, 0, W, H);
   drawGround();
-  // placement highlight
-  if (placing) {
-    const s = TYPES[placing.type].size;
-    sq(sx(placing.x + s / 2), sy(0, placing.y + s / 2), s, placing.ok ? 'rgba(120,255,120,0.45)' : 'rgba(255,80,60,0.5)');
-  }
-  // buildings are flat, so draw them first; standing things (trees, troops, flags) sort by y
+  // flat ground layer: building pads, selection, placement squares
   for (const b of S.buildings) {
     if (placing && placing.moveId === b.id) continue;
-    drawBuildingAt(b);
+    const s = def(b).size, c = center(b);
+    sq(sx(c.x), sy(0, c.y), s, b.type === 'wall' ? '#4a9628' : '#4e9a2c');
   }
+  const sel = selectedId && byId(selectedId);
+  if (sel && !placing) { const s = def(sel).size, c = center(sel); drawSelect(sx(c.x), sy(0, c.y), s); }
+  for (const p of placingSpots()) {
+    const s = TYPES[p.type].size;
+    sq(sx(p.x + s / 2), sy(0, p.y + s / 2), s, p.ok ? 'rgba(120,255,120,0.5)' : 'rgba(255,80,60,0.55)');
+  }
+  // everything that stands up is drawn back to front
   const items = [];
+  for (const b of S.buildings) {
+    if (placing && placing.moveId === b.id) continue;
+    items.push({ depth: b.y + def(b).size - 0.01, draw: () => drawBuildingAt(b) });
+  }
+  for (const p of placingSpots()) {
+    const s = TYPES[p.type].size;
+    items.push({ depth: p.y + s - 0.005, draw: () => {
+      g.globalAlpha = 0.8;
+      drawBuilding({ type: p.type, lvl: placing.lvl || 1, x: p.x, y: p.y, angle: 0.6, cons: null }, sx(p.x + s / 2), sy(0, p.y + s / 2), { ghost: true });
+      g.globalAlpha = 1;
+    } });
+  }
   for (const d of decor) items.push({ depth: d.y, draw: () => drawDecor(d) });
   for (const u of units) items.push({ depth: u.y + (u.d.air ? 60 : 0), draw: () => drawUnit(u, now) });
   for (const f of flags) items.push({ depth: f.y, draw: () => drawFlag(f, now) });
   items.sort((a, b) => a.depth - b.depth);
   for (const it of items) it.draw();
-  // HP bars and badges over everything on the ground
+  // HP bars over everything
   for (const b of S.buildings) {
-    if (b.destroyed || b.hp >= maxHp(b) || S.phase !== 'day') continue;
+    if (b.destroyed || b.hp >= maxHp(b) || S.phase !== 'raid') continue;
     const s = def(b).size, c = center(b);
-    drawHpBar(sx(c.x), sy(0, c.y) - s * T / 2 - 5, Math.max(8, s * T - 6), b.hp / maxHp(b));
+    drawHpBar(sx(c.x), sy(0, c.y) + (s * T) / 2 - artHeight(b) - 5, Math.max(8, s * T - 6), b.hp / maxHp(b));
   }
-  // selected building range
-  const sel = selectedId && byId(selectedId);
+  // ranges
   if (sel && def(sel).range && !placing) {
     const c = center(sel), t = def(sel);
     ring(sx(c.x), sy(0, c.y), t.range * T, t.range * T, 'rgba(255,255,255,0.8)', true);
     if (t.minRange) ring(sx(c.x), sy(0, c.y), t.minRange * T, t.minRange * T, 'rgba(255,120,100,0.8)', true);
   }
-  // ghost while placing
-  if (placing) {
+  if (placing && !placing.multi && TYPES[placing.type].range) {
     const t = TYPES[placing.type], s = t.size;
-    const fake = { type: placing.type, lvl: placing.lvl || 1, x: placing.x, y: placing.y, angle: 0.6, cons: null };
-    const gx = sx(placing.x + s / 2), gy = sy(0, placing.y + s / 2);
-    g.globalAlpha = 0.85;
-    drawBuilding(fake, gx, gy, { ghost: true });
-    g.globalAlpha = 1;
-    if (t.range) ring(gx, gy, t.range * T, t.range * T, 'rgba(255,255,255,0.7)', true);
+    ring(sx(placing.x + s / 2), sy(0, placing.y + s / 2), t.range * T, t.range * T, 'rgba(255,255,255,0.7)', true);
   }
-  // shots and effects on top
   for (const s of shots) drawShot(s);
   for (const e of fx) drawFx(e);
   for (const t of texts) {
     const k = t.t / t.life;
-    const x = sx(t.x), y = sy(0, t.y) - 12 - k * 14;
+    const x = sx(t.x), y = sy(0, t.y) - 14 - k * 14;
     ptext(t.text, x - textWidth(t.text) / 2, y, t.color);
   }
-  // spell aim
-  if (spellArmed && hover && S.phase === 'day') {
+  if (spellArmed && hover && S.phase === 'raid') {
     const sp = SPELLS[spellArmed], x = sx(hover.x), y = sy(0, hover.y), r = Math.round(sp.radius * T);
     g.globalAlpha = 0.18; circ(x, y, r, sp.color); g.globalAlpha = 1;
     ring(x, y, r, r, sp.color, true);
   }
-  // night tint
+  // night: dark blue, with torch light around defenses and the Town Hall
   if (night) {
-    g.fillStyle = 'rgba(20, 24, 70, 0.38)';
+    g.fillStyle = 'rgba(8, 12, 48, 0.5)';
     g.fillRect(0, 0, W, H);
     for (const b of S.buildings) {
-      if (b.type !== 'townhall' && b.type !== 'builder') continue;
+      if (b.destroyed || !(def(b).cat === 'defense' || b.type === 'townhall')) continue;
       const c = center(b);
-      circ(sx(c.x), sy(0, c.y), 22, 'rgba(255, 200, 90, 0.10)');
+      circ(sx(c.x), sy(0, c.y), b.type === 'townhall' ? 30 : 20, 'rgba(255, 200, 90, 0.10)');
     }
   }
 }
 function drawBuildingAt(b) {
   const s = def(b).size, c = center(b);
   const cx = sx(c.x), cy = sy(0, c.y);
-  if (cx < -40 || cx > W + 40 || cy < -40 || cy > H + 40) return;
-  // walls connect to neighbours, like a real wall line
+  if (cx < -40 || cx > W + 40 || cy < -20 || cy > H + 70) return;
   if (b.type === 'wall' && !b.destroyed && b.lvl >= 1) {
-    sq(cx, cy, 1, '#4a9628');
-    const cols = WALL_COLS[b.lvl - 1];
-    const F = (col) => (b.flash > 0 ? '#ffffff' : col);
-    const nbr = (dx, dy) => {
-      if (!inField(b.x + dx, b.y + dy)) return false;
-      const id = blocked[cellIndex(b.x + dx, b.y + dy)]; const o = id && byId(id);
+    const nbr = (dx) => {
+      if (!inField(b.x + dx, b.y)) return false;
+      const id = blocked[cellIndex(b.x + dx, b.y)]; const o = id && byId(id);
       return o && o.type === 'wall' && !o.destroyed && o.lvl >= 1;
     };
-    const h = Math.round(T * 0.3);
-    if (nbr(1, 0)) { rect(cx, cy - h - 1, T, h * 2 + 2, '#14101c'); rect(cx, cy - h, T, h * 2, F(cols[0])); }
-    if (nbr(0, 1)) { rect(cx - h - 1, cy, h * 2 + 2, T, '#14101c'); rect(cx - h, cy, h * 2, T, F(cols[0])); }
-    if (nbr(-1, 0)) rect(cx - T, cy - h, T, h * 2, F(cols[0]));
-    if (nbr(0, -1)) rect(cx - h, cy - T, h * 2, T, F(cols[0]));
-    blk(cx, cy, 0.7, F(cols[0]));
-    if (selectedId === b.id) drawSelect(cx, cy, s);
+    drawWallBlock(cx, Math.round(cy + T / 2), b.lvl, (col) => (b.flash > 0 ? '#ffffff' : col), nbr(-1), nbr(1));
     return;
   }
-  drawBuilding(b, cx, cy);
-  if (selectedId === b.id) drawSelect(cx, cy, s);
+  drawBuilding(b, cx, cy, { noPad: true });
 }
 function drawSelect(cx, cy, s) {
   const blink = Math.floor(performance.now() / 300) % 2;
-  const h = Math.round(s * T / 2) + 1;
+  const h = Math.round((s * T) / 2) + 1;
   const c = blink ? '#ffffff' : '#f8e070';
   rect(cx - h, cy - h, h * 2, 1, c); rect(cx - h, cy + h - 1, h * 2, 1, c);
   rect(cx - h, cy - h, 1, h * 2, c); rect(cx + h - 1, cy - h, 1, h * 2, c);
@@ -1237,14 +1300,14 @@ function drawUnit(u, now) {
   const img = spriteCanvas(u.d.sprite, u.dir < 0, tint);
   const bob = u.frozen > 0 ? 0 : u.d.air ? Math.round(Math.sin(now / 160 + u.walk)) : (Math.floor(u.walk) % 2);
   const lunge = u.swing ? u.dir * 2 : 0;
-  const top = Math.round(cy - img.height / 2 - bob);
+  const top = Math.round(cy + 3 - img.height - bob - (u.d.air ? 6 : 0));   // feet on the ground (dragons fly a little higher)
   g.drawImage(img, Math.round(cx - img.width / 2 + lunge), top);
   if (u.frozen > 0) { rect(cx - 1, top - 3, 3, 1, '#c8f0ff'); rect(cx, top - 4, 1, 3, '#c8f0ff'); }
   if (u.hp < u.maxhp) drawHpBar(cx, top - 4, Math.max(8, img.width - 2), u.hp / u.maxhp);
 }
 function drawFlag(f, now) {
   const cx = sx(f.x), cy = sy(0, f.y);
-  if (dayTime > 8) return;
+  if (raidTime > 8) return;
   line(cx, cy, cx, cy - 14, '#3a2a18');
   const wave = Math.floor(now / 200) % 2;
   rect(cx + 1, cy - 14 + wave, 8, 5, '#e03a30'); rect(cx + 1, cy - 14 + wave, 8, 1, '#ff8a70');
@@ -1338,7 +1401,9 @@ canvas.addEventListener('pointerdown', (e) => {
   }
   const t = screenToTile(e.clientX, e.clientY);
   let mode = 'pan';
-  if (placing) {
+  if (placing && placing.multi) {
+    if (pendingAt(Math.floor(t.x), Math.floor(t.y)) >= 0) { mode = 'paint'; placing.paintFrom = [Math.floor(t.x), Math.floor(t.y)]; placing.warned = false; }
+  } else if (placing) {
     const s = TYPES[placing.type].size;
     if (t.x >= placing.x - 0.5 && t.x < placing.x + s + 0.5 && t.y >= placing.y - 0.5 && t.y < placing.y + s + 0.5) mode = 'ghost';
   }
@@ -1359,11 +1424,15 @@ canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
   const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
   if (Math.hypot(dx, dy) > 6) drag.moved = true;
-  if (drag.mode === 'ghost') {
+  if (drag.mode === 'paint') {
+    const t = screenToTile(e.clientX, e.clientY);
+    paintWallsTo(clamp(Math.floor(t.x), 0, GRID - 1), clamp(Math.floor(t.y), 0, GRID - 1));
+  } else if (drag.mode === 'ghost') {
     const t = screenToTile(e.clientX, e.clientY);
     placing.x = clamp(Math.round(drag.gx + (t.x - drag.tx)), 0, GRID - TYPES[placing.type].size);
     placing.y = clamp(Math.round(drag.gy + (t.y - drag.ty)), 0, GRID - TYPES[placing.type].size);
     placing.ok = fits(placing.type, placing.x, placing.y, placing.moveId);
+    updatePlaceTip();
   } else {
     cam.x = drag.cx - dx / scale; cam.y = drag.cy - dy / scale; clampCam();
   }
@@ -1377,12 +1446,19 @@ const endPointer = (e) => {
   if (d.moved || e.type === 'pointercancel') return;
   // a tap
   const t = screenToTile(e.clientX, e.clientY);
-  if (spellArmed && S.phase === 'day') { castSpell(spellArmed, t.x, t.y); return; }
+  if (spellArmed && S.phase === 'raid') { castSpell(spellArmed, t.x, t.y); return; }
+  if (placing && placing.multi) {
+    const x = Math.floor(t.x), y = Math.floor(t.y), i = pendingAt(x, y);
+    if (i >= 0) placing.walls.splice(i, 1); else addPendingWall(x, y);
+    sfx('click'); updatePlaceTip();
+    return;
+  }
   if (placing) {
     const s = TYPES[placing.type].size;
     placing.x = clamp(Math.floor(t.x - s / 2 + 0.5), 0, GRID - s);
     placing.y = clamp(Math.floor(t.y - s / 2 + 0.5), 0, GRID - s);
     placing.ok = fits(placing.type, placing.x, placing.y, placing.moveId);
+    updatePlaceTip();
     return;
   }
   const b = buildingAt(t.x, t.y);
@@ -1396,16 +1472,24 @@ window.addEventListener('resize', () => { resize(); });
 if (window.visualViewport) window.visualViewport.addEventListener('resize', () => resize());
 window.addEventListener('orientationchange', () => setTimeout(resize, 150));
 // save whenever the app goes to the background (phones may kill it there)
-document.addEventListener('visibilitychange', () => { if (document.hidden && S && S.phase === 'night') save(); });
-window.addEventListener('pagehide', () => { if (S && S.phase === 'night') save(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && S && S.phase === 'build') save(); });
+window.addEventListener('pagehide', () => { if (S && S.phase === 'build') save(); });
 // no long-press menus or pinch-zooming the page itself
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(); else if (spellArmed) disarmSpell(); else if (placing) cancelPlace(); else deselect(); }
-  if (S && S.phase === 'day' && !e.repeat && $('modal').hidden) { const k = ['1', '2', '3'].indexOf(e.key); if (k >= 0) armSpell(Object.keys(SPELLS)[k]); }
+  if ((e.key === '+' || e.key === '=') && $('modal').hidden) zoomBy(1);
+  if ((e.key === '-' || e.key === '_') && $('modal').hidden) zoomBy(-1);
+  if (S && S.phase === 'raid' && !e.repeat && $('modal').hidden) { const k = ['1', '2', '3'].indexOf(e.key); if (k >= 0) armSpell(Object.keys(SPELLS)[k]); }
 });
-function setScale(s) { scale = s; resize(); }
+function setScale(s) { scale = s; resize(); updateZoomBtns(); }
+function zoomBy(d) { setScale(clamp(scale + d, 2, 6)); }
+function updateZoomBtns() {
+  const a = $('zoomIn'), b = $('zoomOut');
+  if (a) a.disabled = scale >= 6;
+  if (b) b.disabled = scale <= 2;
+}
 
 /* =====================================================================
    UI
@@ -1455,6 +1539,15 @@ function hydrateCosts(root) {
 }
 const daysLabel = (d) => (d === 0 ? 'Instant' : d === 1 ? '1 day' : d + ' days');
 
+let bannerTimer = 0;
+function banner(title, sub, kind) {
+  const el = $('banner');
+  el.className = 'banner ' + kind;
+  el.innerHTML = `<div class="banner-title ol">${title}</div><div class="banner-sub ol">${sub}</div>`;
+  el.hidden = false;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { el.hidden = true; }, 1900);
+}
 let toastTimer = 0;
 function toast(msg, ms) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -1464,13 +1557,14 @@ function toast(msg, ms) {
 function refreshUI() {
   if (!S) return;
   if (selectedId) renderSel();
-  const day = S.phase !== 'night';
+  const building = S.phase === 'build';   // day = build, night = fight
   const ph = $('phase');
-  ph.classList.toggle('is-day', day);
-  drawIcon($('phaseIcon'), day ? 'sun' : 'moon');
-  $('phaseTitle').textContent = (day ? 'DAY ' : 'NIGHT ') + S.day;
+  ph.classList.toggle('is-day', building);
+  document.body.classList.toggle('night', !building);
+  drawIcon($('phaseIcon'), building ? 'sun' : 'moon');
+  $('phaseTitle').textContent = (building ? 'DAY ' : 'NIGHT ') + S.day;
   const bl = builders();
-  $('phaseSub').innerHTML = day ? `<span data-ico="shield" data-px="14"></span>Defend!` : `<span data-ico="hammer" data-px="14"></span>Builders ${bl.free}/${bl.total}`;
+  $('phaseSub').innerHTML = building ? `<span data-ico="hammer" data-px="14"></span>Builders ${bl.free}/${bl.total}` : `<span data-ico="shield" data-px="14"></span>Defend!`;
   hydrateCosts($('phaseSub'));
   for (const res of ['gold', 'elixir']) {
     const cap = capOf(res);
@@ -1478,20 +1572,34 @@ function refreshUI() {
     $(res + 'Cap').textContent = 'Max ' + fmt(cap);
     $(res + 'Fill').style.width = clamp((S[res] / cap) * 100, 0, 100) + '%';
   }
-  const night = S.phase === 'night';
-  $('shopBtn').hidden = !night || !!placing;
-  $('defendBtn').hidden = !night || !!placing;
-  $('defendText').textContent = 'START DAY ' + S.day;
-  $('wave').hidden = S.phase !== 'day';
-  $('speedBtn').hidden = S.phase !== 'day';
+  $('shopBtn').hidden = !building || !!placing;
+  $('defendBtn').hidden = !building || !!placing;
+  $('defendBtn').title = `Start night ${S.day}: the raid begins`;
+  $('wave').hidden = S.phase !== 'raid';
+  $('speedBtn').hidden = S.phase !== 'raid';
   $('speedBtn').textContent = 'x' + speed;
   $('placeBar').hidden = !placing;
-  $('spellBar').hidden = S.phase !== 'day';
+  updatePlaceTip();
   updateRepairAll();
   updateWave();
   updateSpells();
 }
-// ----- spell bar -----
+// ----- spells: stock, brewing and the night-time spell bar -----
+const spellFactory = () => S.buildings.find((b) => b.type === 'spellfactory');
+const factoryLevel = () => { const f = spellFactory(); return f ? Math.max(0, f.lvl) : 0; };
+const spellSlots = () => { const f = spellFactory(); return f && f.lvl >= 1 ? def(f).slots[f.lvl - 1] : 0; };
+const spellsStored = () => Object.values(S.spells).reduce((a, n) => a + n, 0);
+function brew(type) {
+  const sp = SPELLS[type], f = spellFactory();
+  if (S.phase !== 'build') { toast('Spells are brewed during the day'); sfx('nope'); return; }
+  if (!f || !active(f)) { toast('The Spell Factory must be built and working'); sfx('nope'); return; }
+  if (f.lvl < sp.lvl) { toast(`Needs Spell Factory level ${sp.lvl}`); sfx('nope'); return; }
+  if (spellsStored() >= spellSlots()) { toast('The Spell Factory is full'); sfx('nope'); return; }
+  if (S.elixir < sp.cost) { toast('Not enough elixir'); sfx('nope'); return; }
+  S.elixir -= sp.cost;
+  S.spells[type]++;
+  sfx('build'); save(); refreshUI(); renderSel(true);
+}
 function buildSpellBar() {
   const bar = $('spellBar');
   bar.innerHTML = '';
@@ -1500,27 +1608,29 @@ function buildSpellBar() {
     btn.className = 'btn spell-btn';
     btn.dataset.spell = type;
     btn.title = `${sp.name} (${i + 1}): ${sp.desc}`;
-    btn.setAttribute('aria-label', `${sp.name}, ${sp.cost} elixir. ${sp.desc}`);
-    btn.innerHTML = `<span class="spell-cd"></span><span class="spell-name">${sp.name}</span><span class="cost" data-cost="elixir">${sp.cost}</span>`;
-    btn.prepend(icon(sp.icon, 26));
-    hydrateCosts(btn);
+    btn.innerHTML = `<span class="spell-cd"></span><span class="spell-count ol">0</span>`;
+    btn.prepend(icon(sp.icon, 24));
     btn.onclick = () => { unlockAudio(); armSpell(type); };
     bar.appendChild(btn);
   });
 }
 function updateSpells() {
   if (!S) return;
+  $('spellBar').hidden = S.phase !== 'raid' || (!spellsStored() && !spellArmed);
   for (const btn of $('spellBar').children) {
-    const type = btn.dataset.spell, sp = SPELLS[type];
+    const type = btn.dataset.spell, sp = SPELLS[type], n = S.spells[type] || 0;
     const cd = spellCd[type];
+    btn.hidden = n <= 0 && spellArmed !== type;
+    btn.querySelector('.spell-count').textContent = 'x' + n;
+    btn.setAttribute('aria-label', `${sp.name}, ${n} left. ${sp.desc}`);
     btn.classList.toggle('armed', spellArmed === type);
-    btn.classList.toggle('off', cd > 0 || S.elixir < sp.cost);
+    btn.classList.toggle('off', cd > 0 || n <= 0);
     btn.querySelector('.spell-cd').style.height = (cd > 0 ? (cd / sp.cd) * 100 : 0) + '%';
   }
 }
 
 function updateWave() {
-  if (S.phase !== 'day') return;
+  if (S.phase !== 'raid') return;
   const left = units.length + spawnQueue.length;
   $('waveText').textContent = 'ENEMIES ' + left;
 }
@@ -1553,7 +1663,7 @@ function repair(b) {
   S.gold -= cost;
   fixBuilding(b);
   toast(`${def(b).name} repaired`);
-  sfx('build'); if (S.phase === 'night') save(); refreshUI(); renderSel(true);
+  sfx('build'); if (S.phase === 'build') save(); refreshUI(); renderSel(true);
 }
 function repairAll() {
   const list = damaged().sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || repairCost(a) - repairCost(b));
@@ -1567,15 +1677,16 @@ function repairAll() {
   }
   if (!fixed) { toast('Not enough gold'); sfx('nope'); return; }
   toast(fixed === list.length ? `Repaired ${fixed} building${fixed > 1 ? 's' : ''} for ${fmt(spent)} gold` : `Repaired ${fixed} of ${list.length}. Not enough gold for the rest.`);
-  sfx('build'); if (S.phase === 'night') save(); refreshUI(); if (selectedId) renderSel(true);
+  sfx('build'); if (S.phase === 'build') save(); refreshUI(); if (selectedId) renderSel(true);
 }
 function updateRepairAll() {
   const btn = $('repairAllBtn');
-  const list = S.phase === 'night' || S.phase === 'day' ? damaged() : [];
+  const list = S.phase === 'build' || S.phase === 'raid' ? damaged() : [];
   btn.hidden = !list.length || !!placing;
   if (btn.hidden) return;
   const cost = list.reduce((a, b) => a + repairCost(b), 0);
-  $('repairAllText').textContent = `REPAIR ALL (${list.length}) · ${fmt(cost)}`;
+  $('repairAllText').textContent = fmt(cost);
+  btn.title = `Repair all ${list.length} damaged building${list.length > 1 ? 's' : ''} for ${fmt(cost)} gold`;
   btn.classList.toggle('off', S.gold < Math.min(...list.map(repairCost)));
 }
 
@@ -1589,62 +1700,76 @@ function renderSel(force) {
   const b = byId(selectedId);
   const el = $('sel');
   if (!b) { deselect(); return; }
-  const key = [b.id, b.lvl, b.cons ? b.cons.days : '-', b.destroyed, S.phase, missingHp(b) > 0].join('|');
+  const isFactory = b.type === 'spellfactory';
+  const key = [b.id, b.lvl, b.cons ? b.cons.days : '-', b.destroyed, S.phase, missingHp(b) > 0, isFactory ? JSON.stringify(S.spells) : ''].join('|');
   if (!force && key === selKey && !el.hidden) { updateSelLive(b); return; }
   selKey = key;
   const t = def(b), lvl = b.lvl;
-  const night = S.phase === 'night', fighting = S.phase === 'day';
+  const building = S.phase === 'build';
   const shownLvl = Math.max(1, lvl);
-  const stats = [];
-  stats.push(`<div>Hitpoints <b id="selHp"></b></div>`);
-  if (t.dmg) stats.push(`<div>Damage <b>${t.dmg[shownLvl - 1]}</b> per shot</div>`, `<div>Range <b>${t.range}</b> tiles</div>`, `<div>Targets <b>${t.air && t.ground ? 'Ground &amp; air' : t.air ? 'Air' : 'Ground'}</b></div>`);
-  if (t.prod) stats.push(`<div>Makes <b>${fmt(t.prod[shownLvl - 1])}</b> a day</div>`);
-  if (t.store) stats.push(`<div>Holds <b>${fmt(t.store[shownLvl - 1])}</b></div>`);
-  if (t.cap) stats.push(`<div>Holds <b>${fmt(t.cap[shownLvl - 1])}</b> of each</div>`);
+  const chips = [];
+  if (t.dmg) chips.push(`Damage <b>${t.dmg[shownLvl - 1]}</b>`, `Range <b>${t.range}</b>`, `<b>${t.air && t.ground ? 'Ground + air' : t.air ? 'Air only' : 'Ground only'}</b>`);
+  if (t.prod) chips.push(`Makes <b>${fmt(t.prod[shownLvl - 1])}</b>/night`);
+  if (t.store) chips.push(`Holds <b>${fmt(t.store[shownLvl - 1])}</b>`);
+  if (t.cap) chips.push(`Holds <b>${fmt(t.cap[shownLvl - 1])}</b> each`);
+  if (t.slots) chips.push(`Spells <b>${spellsStored()}/${spellSlots() || t.slots[0]}</b>`);
   let status = '';
-  if (b.cons) status = lvl < 1 ? `Under construction: ready in ${daysLabel(b.cons.days)}.` : `Upgrading to level ${b.cons.to}: ready in ${daysLabel(b.cons.days)}. It won't work until then.`;
+  if (b.cons) status = lvl < 1 ? `Being built: ready in ${daysLabel(b.cons.days)}.` : `Upgrading to level ${b.cons.to}: ready in ${daysLabel(b.cons.days)}. It won't work until then.`;
   else if (b.destroyed) status = 'Destroyed. It does nothing until you repair it.';
-  else if (missingHp(b) > 0) status = 'Damaged. Damage stays after the raid until you repair it.';
-  // what the next level brings
+  else if (missingHp(b) > 0) status = 'Damaged. Repair it with gold.';
   const next = lvl + 1;
   let nextInfo = '';
   if (lvl >= 1 && !b.cons && next <= t.max && t.cost[next - 1]) {
-    const bits = [`HP ${fmt(t.hp[lvl - 1])} → ${fmt(t.hp[next - 1])}`];
-    if (t.dmg) bits.push(`Damage ${t.dmg[lvl - 1]} → ${t.dmg[next - 1]}`);
-    if (t.prod) bits.push(`Makes ${fmt(t.prod[lvl - 1])} → ${fmt(t.prod[next - 1])}`);
-    if (t.store) bits.push(`Holds ${fmt(t.store[lvl - 1])} → ${fmt(t.store[next - 1])}`);
-    if (t.cap) bits.push(`Holds ${fmt(t.cap[lvl - 1])} → ${fmt(t.cap[next - 1])}`);
-    nextInfo = `<div class="next-lvl"><b>Level ${next}:</b> ${bits.join(' · ')}</div>`;
+    const bits = [`HP ${fmt(t.hp[next - 1])}`];
+    if (t.dmg) bits.push(`Damage ${t.dmg[next - 1]}`);
+    if (t.prod) bits.push(`Makes ${fmt(t.prod[next - 1])}`);
+    if (t.store) bits.push(`Holds ${fmt(t.store[next - 1])}`);
+    if (t.cap) bits.push(`Holds ${fmt(t.cap[next - 1])}`);
+    if (t.slots) bits.push(`${t.slots[next - 1]} spells`);
+    nextInfo = `<div class="next-lvl">Next level: ${bits.join(' · ')}</div>`;
+  }
+  // Spell Factory: brew by day
+  let brewHTML = '';
+  if (isFactory && lvl >= 1) {
+    const rows = Object.entries(SPELLS).map(([type, sp]) => {
+      const locked = b.lvl < sp.lvl;
+      const btn = !building ? '' : locked ? `<button class="btn mini" disabled>Level ${sp.lvl}</button>`
+        : `<button class="btn mini go" data-brew="${type}">Brew <span class="cost" data-cost="elixir">${fmt(sp.cost)}</span></button>`;
+      return `<div class="brew-row" title="${sp.desc}"><span data-ico="${sp.icon}" data-px="16"></span><span class="brew-name">${sp.name}</span><b>x${S.spells[type] || 0}</b>${btn}</div>`;
+    }).join('');
+    brewHTML = `<div class="brew">${rows}${building ? '' : '<div class="tiny">Spells are brewed during the day.</div>'}</div>`;
   }
   const actions = [];
-  if (missingHp(b) > 0) actions.push(`<button class="btn go" id="repairBtn">Repair <span class="cost" data-cost="gold" id="repairCost">${fmt(repairCost(b))}</span></button>`);
+  if (missingHp(b) > 0) actions.push(`<button class="btn mini go" id="repairBtn">Repair <span class="cost" data-cost="gold" id="repairCost">${fmt(repairCost(b))}</span></button>`);
   if (!b.cons && lvl >= 1) {
     if (next <= t.max && t.cost[next - 1]) {
       const p = t.cost[next - 1];
-      if (next > levelCap(b.type)) actions.push(`<button class="btn" disabled>Upgrade needs Town Hall ${b.type === 'wall' ? next : next - 1}</button>`);
-      else if (fighting) actions.push(`<button class="btn" disabled>Upgrade at night · ${costHTML(p)}</button>`);
-      else if (b.destroyed) actions.push(`<button class="btn" disabled>Repair before upgrading</button>`);
-      else actions.push(`<button class="btn go" id="upBtn">Upgrade ${costHTML(p)} · ${daysLabel(p[2])}</button>`);
-    } else if (t.max > 1) actions.push('<button class="btn" disabled>Max level</button>');
+      if (next > levelCap(b.type)) actions.push(`<button class="btn mini" disabled>Upgrade: Town Hall ${b.type === 'wall' ? next : next - 1}</button>`);
+      else if (!building) actions.push(`<button class="btn mini" disabled>Upgrade by day · ${costHTML(p)}</button>`);
+      else if (b.destroyed) actions.push(`<button class="btn mini" disabled>Repair first</button>`);
+      else actions.push(`<button class="btn mini go" id="upBtn">Upgrade ${costHTML(p)} · ${daysLabel(p[2])}</button>`);
+    } else if (t.max > 1) actions.push('<button class="btn mini" disabled>Max level</button>');
   }
-  if (night && b.type !== 'townhall') actions.push('<button class="btn wood" id="moveBtn">Move</button>');
-  if (night && b.type === 'wall' && !b.cons) actions.push('<button class="btn no" id="sellBtn">Remove</button>');
+  if (building && b.type !== 'townhall') actions.push('<button class="btn mini wood" id="moveBtn">Move</button>');
+  if (building && b.type === 'wall' && !b.cons) actions.push('<button class="btn mini no" id="sellBtn">Remove</button>');
   el.innerHTML = `
     <div class="sel-head">
-      <div class="sel-name ol">${t.name}${lvl >= 1 ? ' · Level ' + lvl : ''}</div>
+      <div class="sel-name ol" title="${t.desc}">${t.name}${lvl >= 1 ? ` <span class="lvl">Lv ${lvl}</span>` : ''}</div>
+      <div class="hpbar"><i id="selBar"></i><span id="selHp"></span></div>
       <button class="btn no close-x" id="selClose" aria-label="Close">&#x2716;</button>
     </div>
     <div class="sel-body">
-      <div class="hpbar"><i id="selBar"></i></div>
-      <div class="stats">${stats.join('')}</div>
-      ${status ? `<div class="note">${status}</div>` : `<div class="note">${t.desc}</div>`}
+      ${chips.length ? `<div class="chips">${chips.map((c) => `<span>${c}</span>`).join('')}</div>` : ''}
+      ${status ? `<div class="note">${status}</div>` : ''}
       ${nextInfo}
+      ${brewHTML}
       ${actions.length ? `<div class="sel-actions">${actions.join('')}</div>` : ''}
     </div>`;
   hydrateCosts(el);
   el.hidden = false;
   updateSelLive(b);
   $('selClose').onclick = deselect;
+  el.querySelectorAll('[data-brew]').forEach((bt) => { bt.onclick = () => brew(bt.dataset.brew); });
   const rp = $('repairBtn'); if (rp) rp.onclick = () => repair(b);
   const up = $('upBtn'); if (up) up.onclick = () => upgrade(b);
   const mv = $('moveBtn'); if (mv) mv.onclick = () => beginMove(b);
@@ -1684,7 +1809,9 @@ function beginPlace(type, near) {
   const spot = freeSpotFor(type, near);
   if (!spot) { toast('No room left. Move something first.'); return; }
   closeModal(); deselect();
-  placing = { type, x: spot.x, y: spot.y, ok: true, moveId: null };
+  placing = type === 'wall'
+    ? { type, multi: true, walls: [{ x: spot.x, y: spot.y }], moveId: null }
+    : { type, x: spot.x, y: spot.y, ok: true, moveId: null };
   refreshUI();
 }
 function beginMove(b) {
@@ -1692,11 +1819,48 @@ function beginMove(b) {
   placing = { type: b.type, x: b.x, y: b.y, ok: true, moveId: b.id, lvl: b.lvl };
   refreshUI();
 }
+// every square being placed right now, for drawing
+function placingSpots() {
+  if (!placing) return [];
+  if (placing.multi) return placing.walls.map((w) => ({ type: 'wall', x: w.x, y: w.y, ok: true }));
+  return [{ type: placing.type, x: placing.x, y: placing.y, ok: placing.ok }];
+}
+// ----- laying many walls at once -----
+const pendingAt = (x, y) => placing.walls.findIndex((w) => w.x === x && w.y === y);
+function addPendingWall(x, y, quiet) {
+  if (x < 0 || y < 0 || x >= GRID || y >= GRID || pendingAt(x, y) >= 0 || !fits('wall', x, y)) return false;
+  const n = placing.walls.length + 1, price = priceOf('wall', 1);
+  if (countOf('wall') + n > limitOf('wall')) { if (!quiet) toast(`Wall limit reached (${limitOf('wall')}). Upgrade the Town Hall for more.`); return false; }
+  if (S.gold < price[0] * n) { if (!quiet) toast('Not enough gold for more walls'); return false; }
+  placing.walls.push({ x, y });
+  return true;
+}
+function paintWallsTo(x, y) {
+  // fill every tile between the last painted tile and this one, so fast drags leave no gaps
+  let [cx, cy] = placing.paintFrom;
+  let guard = 80;
+  while ((cx !== x || cy !== y) && guard--) {
+    if (cx !== x) cx += Math.sign(x - cx); else cy += Math.sign(y - cy);
+    if (!addPendingWall(cx, cy, placing.warned) && pendingAt(cx, cy) < 0) placing.warned = true;
+  }
+  placing.paintFrom = [x, y];
+  updatePlaceTip();
+}
 function cancelPlace() { placing = null; refreshUI(); }
 function confirmPlace() {
   if (!placing) return;
-  if (!placing.ok) { toast("Can't build there"); sfx('nope'); return; }
   const p = placing;
+  if (p.multi) {
+    const n = p.walls.length, price = priceOf('wall', 1);
+    if (!n) { toast('Tap the ground to add walls'); sfx('nope'); return; }
+    if (S.gold < price[0] * n) { toast('Not enough gold'); sfx('nope'); return; }
+    S.gold -= price[0] * n;
+    for (const w of p.walls) add('wall', w.x, w.y, 1);
+    placing = null; rebuildBlocked(); sfx('build'); save(); refreshUI();
+    toast(`Built ${n} wall${n > 1 ? 's' : ''}`);
+    return;
+  }
+  if (!p.ok) { toast("Can't build there"); sfx('nope'); return; }
   if (p.moveId) {
     const b = byId(p.moveId); b.x = p.x; b.y = p.y;
     placing = null; rebuildBlocked(); save(); refreshUI(); sfx('build'); return;
@@ -1711,22 +1875,30 @@ function confirmPlace() {
   rebuildBlocked();
   sfx('build');
   save();
-  // walls: keep laying the next segment along the same line
-  if (p.type === 'wall' && countOf('wall') < limitOf('wall') && canAfford(priceOf('wall', 1))) {
-    const dir = p.lastDir || [1, 0];
-    let nx = p.x + dir[0], ny = p.y + dir[1];
-    if (!fits('wall', nx, ny)) {
-      const alt = [[1, 0], [0, 1], [-1, 0], [0, -1]].find(([dx, dy]) => fits('wall', p.x + dx, p.y + dy));
-      if (alt) { nx = p.x + alt[0]; ny = p.y + alt[1]; }
-    }
-    if (fits('wall', nx, ny)) {
-      placing = { type: 'wall', x: nx, y: ny, ok: true, moveId: null, lastDir: [nx - p.x, ny - p.y] };
-      refreshUI(); return;
-    }
-  }
   placing = null;
   refreshUI();
   if (price[2] > 0) toast(`${t.name} will be ready in ${daysLabel(price[2])}`);
+}
+// the tip bar shown at the bottom while placing
+function updatePlaceTip() {
+  const tip = $('placeTip');
+  if (!placing) { tip.hidden = true; return; }
+  const t = TYPES[placing.type];
+  let html;
+  if (placing.multi) {
+    const n = placing.walls.length, price = priceOf('wall', 1);
+    html = `<div class="tip-title">${n} wall${n === 1 ? '' : 's'} · ${costHTML([price[0] * n, 0])}</div>
+      <div class="tip-help">Tap ground to add, tap a wall to remove. Drag from a wall to draw a line. Walls left: ${Math.max(0, limitOf('wall') - countOf('wall') - n)}</div>`;
+  } else if (placing.moveId) {
+    html = `<div class="tip-title">Moving ${t.name}</div><div class="tip-help">${placing.ok ? 'Drag it or tap a spot, then tap ✔' : "<span class='bad'>Can't go here: it overlaps something</span>"}</div>`;
+  } else {
+    const price = priceOf(placing.type, 1);
+    html = `<div class="tip-title">${t.name} · ${costHTML(price)} · ${daysLabel(price[2])}</div>
+      <div class="tip-help">${placing.ok ? 'Drag it or tap a spot, then tap ✔ to build' : "<span class='bad'>Can't build here: it overlaps something</span>"}</div>`;
+  }
+  tip.innerHTML = html;
+  hydrateCosts(tip);
+  tip.hidden = false;
 }
 $('placeOk').onclick = confirmPlace;
 $('placeNo').onclick = cancelPlace;
@@ -1734,7 +1906,7 @@ $('placeNo').onclick = cancelPlace;
 // ----- shop -----
 let shopTab = 'defense';
 function openShop() {
-  if (S.phase !== 'night') return;
+  if (S.phase !== 'build') return;
   deselect();
   const m = $('modal');
   const tabs = SHOP_TABS.map(([id, label]) => `<button class="tab" role="tab" aria-selected="${id === shopTab}" data-tab="${id}">${label}</button>`).join('');
@@ -1775,11 +1947,13 @@ function openShop() {
 }
 function previewCanvas(type, height) {
   const c = document.createElement('canvas');
-  c.width = 64; c.height = height || 56;
+  c.width = 64; c.height = height || 58;
   const prev = g; g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-  drawBuilding({ type, lvl: 1, x: 0, y: 0, angle: 0.5, cons: null, hp: 1 }, 32, Math.round(c.height / 2), { ghost: false });
+  const s = TYPES[type].size;   // side view: the building stands on a strip of ground near the bottom
+  rect(0, c.height - 5, c.width, 5, '#5aa830');
+  drawBuilding({ type, lvl: 1, x: 0, y: 0, angle: 0.5, cons: null, hp: 1 }, 32, Math.round(c.height - 5 - (s * T) / 2), { noPad: true });
   g = prev;
-  c.style.width = '128px'; c.style.height = '112px';
+  c.style.width = '128px'; c.style.height = '116px';
   return c;
 }
 function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; }
@@ -1800,8 +1974,8 @@ function popup(title, bodyHTML, buttons, cls) {
 }
 function showGameOver(days) {
   clearTimeout(toastTimer); $('toast').classList.remove('show');
-  popup('GAME OVER', `<p>Your Town Hall was destroyed on day ${days + 1}. The village has fallen.</p>
-    <div class="loot"><div>DAYS SURVIVED: ${days}</div><div>BEST: ${Math.max(days, bestDay())}</div></div>`,
+  popup('GAME OVER', `<p>Your Town Hall was destroyed on night ${days + 1}. The village has fallen.</p>
+    <div class="loot"><div>NIGHTS SURVIVED: ${days}</div><div>BEST: ${Math.max(days, bestDay())}</div></div>`,
   [['NEW VILLAGE', 'war', () => { closeModal(); newGame(); rebuildBlocked(); centerOn(15, 15); refreshUI(); }]]);
 }
 function showTitle() {
@@ -1813,14 +1987,14 @@ function showTitle() {
   const best = bestDay();
   popup('<span class="logo">CLASH</span>', `
     <div class="how">
-      <div><span data-ico="moon" data-px="18"></span><span>At night, build and upgrade your village. Bigger buildings take days to finish.</span></div>
-      <div><span data-ico="sun" data-px="18"></span><span>By day, a wave of raiders attacks. Your defenses fight on their own, and you can cast spells to help.</span></div>
+      <div><span data-ico="sun" data-px="18"></span><span><b>Day:</b> build and upgrade. Everything but walls takes your builders at least a day.</span></div>
+      <div><span data-ico="moon" data-px="18"></span><span><b>Night:</b> raiders attack. Your defenses fight on their own. From Town Hall 4, cast spells you brewed by day.</span></div>
       <div><span data-ico="hammer" data-px="18"></span><span>Tap a building to see it, repair it or upgrade it. Damage stays until you repair it.</span></div>
-      <div><span data-ico="shield" data-px="18"></span><span>Keep your Town Hall standing. How many days can you last?</span></div>
+      <div><span data-ico="shield" data-px="18"></span><span>If your Town Hall falls, the game is over. How many nights can you last?</span></div>
     </div>
-    ${best ? `<div class="loot"><div>BEST: ${best} DAYS</div></div>` : ''}
+    ${best ? `<div class="loot"><div>BEST: ${best} NIGHTS</div></div>` : ''}
     <div class="ver-note">v${GAME_VERSION}</div>`,
-  hasSave ? [['NEW', 'no', () => { closeModal(); newGame(); rebuildBlocked(); refreshUI(); }], [`CONTINUE · NIGHT ${S.day}`, 'go', () => { closeModal(); }]]
+  hasSave ? [['NEW', 'no', () => { closeModal(); newGame(); rebuildBlocked(); refreshUI(); }], [`CONTINUE · DAY ${S.day}`, 'go', () => { closeModal(); }]]
     : [['PLAY', 'go', () => { closeModal(); }]], 'title-screen');
 }
 function showPatchNotes() {
@@ -1836,9 +2010,10 @@ $('versionBtn').onclick = () => { unlockAudio(); sfx('click'); showPatchNotes();
 buildSpellBar();
 $('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
 $('repairAllBtn').onclick = () => { unlockAudio(); repairAll(); };
-$('defendBtn').onclick = () => { unlockAudio(); startDay(); };
-$('zoomIn').onclick = () => setScale(clamp(scale + 1, 2, 6));
-$('zoomOut').onclick = () => setScale(clamp(scale - 1, 2, 6));
+$('defendBtn').onclick = () => { unlockAudio(); startRaid(); };
+$('zoomIn').onclick = () => zoomBy(1);
+$('zoomOut').onclick = () => zoomBy(-1);
+updateZoomBtns();
 $('speedBtn').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; refreshUI(); };
 document.querySelectorAll('canvas[data-icon]').forEach((c) => drawIcon(c, c.dataset.icon));
 
@@ -1906,13 +2081,13 @@ let last = performance.now(), acc = 0, uiTick = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (S) {
-    acc += dt * (S.phase === 'day' ? speed : 1);
+    acc += dt * (S.phase === 'raid' ? speed : 1);
     const STEP = 1 / 60;
     let n = 0;
     while (acc >= STEP && n++ < 12) { step(STEP); acc -= STEP; }
     render(now);
     uiTick += dt;
-    if (uiTick > 0.25) { uiTick = 0; if (S.phase === 'day') { updateWave(); for (const r of ['gold', 'elixir']) { $(r + 'Amt').textContent = fmt(S[r]); $(r + 'Fill').style.width = clamp(S[r] / capOf(r) * 100, 0, 100) + '%'; } updateSpells(); updateRepairAll(); if (selectedId) renderSel(); } }
+    if (uiTick > 0.25) { uiTick = 0; if (S.phase === 'raid') { updateWave(); for (const r of ['gold', 'elixir']) { $(r + 'Amt').textContent = fmt(S[r]); $(r + 'Fill').style.width = clamp(S[r] / capOf(r) * 100, 0, 100) + '%'; } updateSpells(); updateRepairAll(); if (selectedId) renderSel(); } }
   }
   requestAnimationFrame(frame);
 }
@@ -1925,4 +2100,4 @@ showTitle();
 requestAnimationFrame(frame);
 
 // hooks for automated tests
-window.ClashDebug = { get S() { return S; }, get units() { return units; }, step, startDay, startNight, waveFor, fits, getField, rebuildBlocked, endDay, priceOf, newGame, add, builders, limitOf, countOf, levelCap, canAfford, freeSpotFor, thLevel, closeModal, TYPES, previewCanvas, tileToScreen: (x, y) => ({ x: (x * T - cam.x + W / 2) * scale, y: (y * T - cam.y + H / 2) * scale }), maxHpOf: maxHp, repairCost, castSpell, armSpell, get spellCd() { return spellCd; }, SPELLS, GAME_VERSION, showPatchNotes };
+window.ClashDebug = { get S() { return S; }, get units() { return units; }, step, startRaid, startBuild, waveFor, fits, getField, rebuildBlocked, endRaid, priceOf, newGame, add, builders, limitOf, countOf, levelCap, canAfford, freeSpotFor, thLevel, closeModal, TYPES, previewCanvas, refreshUI, get placing() { return placing; }, tileToScreen: (x, y) => ({ x: (x * T - cam.x + W / 2) * scale, y: (y * T - cam.y + H / 2) * scale }), maxHpOf: maxHp, repairCost, castSpell, armSpell, get spellCd() { return spellCd; }, SPELLS, GAME_VERSION, showPatchNotes };
