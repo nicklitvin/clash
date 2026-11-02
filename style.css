@@ -39,6 +39,7 @@ button { touch-action: manipulation; -webkit-touch-callout: none; }
   cursor: grab; display: block;
 }
 #game.dragging { cursor: grabbing; }
+#game.aiming { cursor: crosshair; }
 canvas.ico { image-rendering: pixelated; display: block; }
 
 /* ---------- outlined pixel text, the genre's signature ---------- */
@@ -72,8 +73,15 @@ canvas.ico { image-rendering: pixelated; display: block; }
 #hud button, #hud .sel, #hud .phase, #hud .res, #hud .wave { pointer-events: auto; }
 .top-left {
   position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(10px + env(safe-area-inset-left, 0px));
-  display: flex; align-items: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
 }
+.version-btn {
+  font-family: var(--display); font-size: 9px; color: #f5e9c8; cursor: pointer; padding: 5px 8px;
+  background: rgba(10, 8, 20, .62); border: 2px solid var(--ink); border-radius: 8px;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.version-btn:hover { color: #fff; }
+.version-btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
 .phase {
   display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px;
   background: rgba(10, 8, 20, .62); border: 3px solid var(--ink); border-radius: 14px;
@@ -139,6 +147,19 @@ canvas.ico { image-rendering: pixelated; display: block; }
 .close-x { width: 30px; height: 30px; font-size: 12px; border-radius: 9px; padding: 0; }
 
 .place-bar { display: flex; gap: 16px; }
+
+/* spell bar (day only) */
+.spells { display: flex; gap: 10px; justify-content: center; }
+.spell-btn {
+  position: relative; overflow: hidden; flex-direction: column; gap: 4px; width: 86px; padding: 8px 4px 7px;
+  background: linear-gradient(#b4a4ff, #7a62e0 45%, #4a34a8); font-size: 8px;
+}
+.spell-btn .spell-name { position: relative; z-index: 1; }
+.spell-btn .cost { position: relative; z-index: 1; font-family: var(--body); font-size: 11px; }
+.spell-btn canvas { position: relative; z-index: 1; }
+.spell-btn .spell-cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(10, 8, 20, .6); z-index: 0; pointer-events: none; }
+.spell-btn.off { filter: grayscale(.7) brightness(.8); }
+.spell-btn.armed { outline: 3px solid #fff; outline-offset: 2px; transform: translateY(-4px); }
 .place-bar .btn { width: 58px; height: 58px; border-radius: 16px; padding: 0; font-size: 18px; }
 
 /* modal */
@@ -173,7 +194,6 @@ canvas.ico { image-rendering: pixelated; display: block; }
 .popup { width: min(100%, 420px); text-align: center; }
 .popup .window-head { justify-content: center; padding: 14px; }
 .popup-body { padding: 18px; display: grid; gap: 14px; justify-items: center; overflow-y: auto; }
-.stars { display: flex; gap: 8px; }
 .loot { display: grid; gap: 8px; font-family: var(--display); font-size: 11px; }
 .loot div { display: flex; align-items: center; gap: 8px; justify-content: center; }
 .popup p { margin: 0; line-height: 1.5; font-size: 13px; max-width: 34ch; }
@@ -182,6 +202,15 @@ canvas.ico { image-rendering: pixelated; display: block; }
   color: var(--gold); text-shadow: 4px 0 0 var(--ink), -4px 0 0 var(--ink), 0 4px 0 var(--ink), 0 -4px 0 var(--ink), 4px 4px 0 var(--ink), -4px 4px 0 var(--ink), 4px -4px 0 var(--ink), -4px -4px 0 var(--ink), 0 8px 0 var(--ink); }
 .how { text-align: left; font-size: 13px; line-height: 1.55; display: grid; gap: 6px; }
 .how div { display: flex; gap: 8px; align-items: flex-start; }
+.ver-note { font-size: 11px; color: #6b4a22; }
+
+/* patch notes */
+.notes .popup-body { justify-items: stretch; }
+.patch-list { text-align: left; display: grid; gap: 14px; max-height: 55vh; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.patch h3 { margin: 0; font-family: var(--display); font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.patch .now { font-size: 8px; padding: 3px 5px; background: var(--go-deep); border: 2px solid var(--ink); border-radius: 6px; text-shadow: none; }
+.patch-date { font-size: 11px; color: #6b4a22; margin-top: 4px; }
+.patch ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.45; display: grid; gap: 4px; }
 
 .toast {
   position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 9; pointer-events: none;
@@ -198,6 +227,7 @@ canvas.ico { image-rendering: pixelated; display: block; }
   .defend-btn { font-size: 11px; padding: 12px 14px; }
   .phase-title { font-size: 11px; }
   .bottom-center { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .spell-btn { width: 78px; font-size: 7px; }
 }
 /* touch screens pinch to zoom, so the zoom buttons just take up room */
 @media (pointer: coarse) {

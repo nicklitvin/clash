@@ -18,9 +18,14 @@ screen and works offline.
 
 - **Night:** build and upgrade. Bigger projects take 1–3 days to finish, and
   each Builder's Hut runs one project at a time.
-- **Day:** a wave attacks. Your defenses fight on their own.
-- If your Town Hall falls, the run is over. The village saves itself every
-  night.
+- **Day:** a wave attacks. Your defenses fight on their own, and you can cast
+  spells (Lightning, Freeze, Heal) for elixir: tap a spell, then tap the map.
+  Keys 1–3 pick a spell on a keyboard.
+- Survive and night falls straight away, with your income added.
+- The moment your Town Hall falls, the game is over. The village saves itself
+  every night.
+- The whole game is flat 2D, seen from above. Tap the version number in the top
+  left to read the patch notes.
 
 ## Files
 
@@ -33,6 +38,9 @@ sw.js                  offline cache (bump VERSION when files change)
 fonts/                 Press Start 2P and Silkscreen (SIL Open Font License)
 icons/                 app icons
 ```
+
+When you ship a change, bump `GAME_VERSION` and add an entry to
+`PATCH_NOTES` at the top of `game.js`, and bump `VERSION` in `sw.js`.
 
 There are no build steps and no internet dependencies, so the folder can be
 wrapped as-is.
