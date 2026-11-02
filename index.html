@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Clash</title>
+<meta name="description" content="A single-player, defense-only village game in 8-bit pixel art. Build at night, survive a raid every day.">
+<meta name="theme-color" content="#121a33">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Clash">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preload" href="fonts/press-start-2p.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="game" aria-label="Your village"></canvas>
+
+<div id="hud">
+  <div class="top-left">
+    <div class="phase" id="phase">
+      <div class="icon-wrap"><canvas class="ico" id="phaseIcon" width="12" height="12" style="width:28px;height:28px"></canvas></div>
+      <div>
+        <div class="phase-title ol" id="phaseTitle">NIGHT 1</div>
+        <div class="phase-sub" id="phaseSub"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="top-right">
+    <div class="res gold" id="resGold" title="Gold">
+      <canvas class="ico" data-icon="gold" width="12" height="12"></canvas>
+      <div class="cap" id="goldCap"></div>
+      <div class="track"><div class="fill" id="goldFill"></div><div class="amount ol" id="goldAmt">0</div></div>
+    </div>
+    <div class="res elixir" id="resElixir" title="Elixir">
+      <canvas class="ico" data-icon="elixir" width="12" height="12"></canvas>
+      <div class="cap" id="elixirCap"></div>
+      <div class="track"><div class="fill" id="elixirFill"></div><div class="amount ol" id="elixirAmt">0</div></div>
+    </div>
+  </div>
+
+  <div class="wave ol" id="wave" hidden>
+    <canvas class="ico" data-icon="sword" width="12" height="12" style="width:20px;height:20px"></canvas>
+    <span id="waveText">ENEMIES 0</span>
+  </div>
+
+  <div class="bottom-left">
+    <button class="btn round" id="zoomIn" aria-label="Zoom in"><canvas class="ico" data-icon="plus" width="12" height="12" style="width:20px;height:20px"></canvas></button>
+    <button class="btn round" id="zoomOut" aria-label="Zoom out"><canvas class="ico" data-icon="minus" width="12" height="12" style="width:20px;height:20px"></canvas></button>
+    <button class="btn round wood" id="soundBtn" aria-label="Sound on"><canvas class="ico" id="soundIco" data-icon="sound" width="12" height="12" style="width:20px;height:20px"></canvas></button>
+    <button class="btn round wood" id="menuBtn" aria-label="Menu"><canvas class="ico" data-icon="menu" width="12" height="12" style="width:20px;height:20px"></canvas></button>
+  </div>
+
+  <div class="bottom-right">
+    <button class="btn round wood" id="speedBtn" hidden aria-label="Game speed">x1</button>
+    <button class="btn shop-btn" id="shopBtn"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:36px;height:36px"></canvas><span>SHOP</span></button>
+  </div>
+
+  <div class="bottom-center">
+    <div class="sel" id="sel" hidden></div>
+    <div class="place-bar" id="placeBar" hidden>
+      <button class="btn no" id="placeNo" aria-label="Cancel">&#x2716;</button>
+      <button class="btn go" id="placeOk" aria-label="Place here">&#x2714;</button>
+    </div>
+    <button class="btn war defend-btn" id="defendBtn"><canvas class="ico" data-icon="sword" width="12" height="12" style="width:22px;height:22px"></canvas><span id="defendText">START DAY 1</span></button>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden></div>
+<div class="toast ol" id="toast"></div>
+
+<script src="game.js"></script>
+<script>
+  // Offline support when served over http(s). Capacitor and Electron load
+  // the files locally, so they don't need it.
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
+</body>
+</html>
