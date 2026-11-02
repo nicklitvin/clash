@@ -82,8 +82,17 @@ const UNITS = {
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '1.1.0';
+const GAME_VERSION = '1.2.0';
 const PATCH_NOTES = [
+  { v: '1.2.0', date: 'Nov 2, 2026', notes: [
+    'Fully flat 2D: no more shading, shadows, flying height or raised buttons.',
+    'Tap any building, day or night, to see its health, stats and what the next level gives.',
+    'New: Repair. Damage now stays after a raid. Repairs cost gold and can be done mid-raid too.',
+    'New: Repair All button fixes every damaged building in one tap.',
+    'Fixed: buttons in the building panel could ignore taps during a raid.',
+    'Upgrades still start at night. During a raid the panel shows the price so you can plan.',
+    'Removed the sound button and the pause menu.',
+  ] },
   { v: '1.1.0', date: 'Nov 2, 2026', notes: [
     'The whole game is now flat 2D, seen straight from above.',
     'New: spells during the day. Tap a spell, then tap the map to cast it.',
@@ -125,7 +134,6 @@ let dayTime = 0, dayStats = null, speed = 1;
 let selectedId = null, placing = null;  // placing: {type, x, y, moveId, ok}
 let fieldCache = new Map(), fieldVersion = 0;
 let blocked = new Int32Array(N * N);   // 0 free, building id otherwise
-let paused = true;
 let spellArmed = null, hover = null, spellCd = { lightning: 0, freeze: 0, heal: 0 };
 let nightTimer = 0, nightSummary = '';
 
@@ -390,13 +398,13 @@ function startNight() {
   units = []; shots = []; texts = []; spawnQueue = []; flags = [];
   const done = [];
   for (const b of S.buildings) {
-    b.destroyed = false;
     if (b.cons) {
       b.cons.days -= 1;
-      if (b.cons.days <= 0) { b.lvl = b.cons.to; b.cons = null; done.push(b); }
+      // a finished project comes back brand new
+      if (b.cons.days <= 0) { b.lvl = b.cons.to; b.cons = null; b.destroyed = false; b.hp = maxHp(b); done.push(b); }
     }
-    b.hp = maxHp(b);
-    b.cd = 0;
+    b.hp = Math.min(b.hp, maxHp(b));
+    b.cd = 0; b.flash = 0; b.target = null;
   }
   rebuildBlocked();
   save();
@@ -404,6 +412,8 @@ function startNight() {
   const msgs = [];
   if (nightSummary) msgs.push(nightSummary);
   nightSummary = '';
+  const hurt = damaged().length;
+  if (hurt) msgs.push(`${hurt} building${hurt > 1 ? 's need' : ' needs'} repair`);
   if (done.length) msgs.push(done.length === 1 ? `${def(done[0]).name} is ready! (level ${done[0].lvl})` : `${done.length} projects finished!`);
   if (msgs.length) toast(msgs.join(' · '), 3600);
 }
@@ -723,7 +733,7 @@ function floatText(x, y, text, color) { texts.push({ x, y, text, color, t: 0, li
 function updateFx(dt) {
   for (const e of fx) {
     e.t += dt;
-    if (e.kind === 'bit') { e.x += e.vx * dt; e.y += e.vy * dt; e.z += e.vz * dt; e.vz -= 70 * dt; if (e.z < 0) { e.z = 0; e.vz = 0; e.vx *= 0.8; e.vy *= 0.8; } }
+    if (e.kind === 'bit') { e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.92; e.vy *= 0.92; }
   }
   fx = fx.filter((e) => e.t < e.life);
   for (const t of texts) t.t += dt;
@@ -853,11 +863,10 @@ function sq(cx, cy, n, col) {            // flat square, n tiles across, centred
   const w = Math.round(n * T);
   rect(Math.round(cx - w / 2), Math.round(cy - w / 2), w, w, col);
 }
-function blk(cx, cy, n, fill, edge) {    // flat square slab with a dark outline and a shaded rim
+function blk(cx, cy, n, fill) {          // flat square with a dark outline (no shading, no depth)
   const w = Math.round(n * T), x = Math.round(cx - w / 2), y = Math.round(cy - w / 2);
   rect(x - 1, y - 1, w + 2, w + 2, '#14101c');
-  rect(x, y, w, w, edge);
-  rect(x + 1, y + 1, w - 2, w - 2, fill);
+  rect(x, y, w, w, fill);
 }
 function circ(cx, cy, r, col) {
   cx = Math.round(cx); cy = Math.round(cy); g.fillStyle = col;
@@ -930,11 +939,11 @@ function drawBuilding(b, cx, cy, opts) {
   const F = (c) => (flash ? '#ffffff' : c);
   switch (b.type) {
     case 'townhall': {
-      blk(cx, cy, 3.7, F('#a8a8b8'), F('#5c5c70'));
+      blk(cx, cy, 3.7, F('#a8a8b8'));
       // corner towers
-      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) blk(cx + dx * 17, cy + dy * 17, 0.8, F('#8c8ca0'), F('#4a4a5e'));
+      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) blk(cx + dx * 17, cy + dy * 17, 0.8, F('#8c8ca0'));
       const roofs = [['#e0503c', '#8a2420'], ['#4a7ae0', '#203c88'], ['#58b838', '#2a6a16'], ['#3a3a4a', '#101018'], ['#f8c830', '#8a6608']][lvl - 1];
-      blk(cx, cy, 2.5, F(roofs[0]), F(roofs[1]));
+      blk(cx, cy, 2.5, F(roofs[0]));
       rect(cx - 14, cy - 1, 28, 2, F(roofs[1]));      // roof ridges
       rect(cx - 1, cy - 14, 2, 28, F(roofs[1]));
       rect(cx - 3, cy + 18, 6, 4, '#3a2010');         // door
@@ -945,7 +954,7 @@ function drawBuilding(b, cx, cy, opts) {
       break;
     }
     case 'cannon': {
-      blk(cx, cy, 2.6, F('#a0a0b2'), F('#56566a'));
+      blk(cx, cy, 2.6, F('#a0a0b2'));
       circ(cx, cy, 10, F(trim));
       circ(cx, cy, 8, F('#6b4a2a'));
       const a = b.angle, kick = b.recoil ? 2 : 0;
@@ -957,7 +966,7 @@ function drawBuilding(b, cx, cy, opts) {
       break;
     }
     case 'archer': {
-      blk(cx, cy, 2.6, F('#c98a4b'), F('#6b3f1f'));
+      blk(cx, cy, 2.6, F('#c98a4b'));
       for (let i = 0; i < 5; i++) rect(cx - 14, cy - 12 + i * 6, 28, 1, F('#9c6233'));
       for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) rect(cx + dx * 12 - 2, cy + dy * 12 - 2, 5, 5, F('#5c3414'));
       rect(cx - 15, cy + 13, 30, 2, trim);
@@ -966,7 +975,7 @@ function drawBuilding(b, cx, cy, opts) {
       break;
     }
     case 'mortar': {
-      blk(cx, cy, 2.6, F('#b0b0c0'), F('#5e5e74'));
+      blk(cx, cy, 2.6, F('#b0b0c0'));
       const kick = b.recoil ? 1 : 0;
       circ(cx, cy, 11, trim);
       circ(cx, cy, 10, F('#3a3a48'));
@@ -975,7 +984,7 @@ function drawBuilding(b, cx, cy, opts) {
       break;
     }
     case 'airdef': {
-      blk(cx, cy, 2.5, F('#a0a0b2'), F('#56566a'));
+      blk(cx, cy, 2.5, F('#a0a0b2'));
       circ(cx, cy, 11, F('#34488a'));
       circ(cx, cy, 9, F('#6a86c8'));
       for (const dx of [-5, 0, 5]) {
@@ -987,30 +996,27 @@ function drawBuilding(b, cx, cy, opts) {
     }
     case 'wall': {
       const cols = WALL_COLS[lvl - 1];
-      blk(cx, cy, 0.8, F(cols[0]), F(cols[1]));
+      blk(cx, cy, 0.8, F(cols[0]));
       break;
     }
     case 'goldmine': {
-      blk(cx, cy, 2.5, F('#9c6233'), F('#5c3414'));
+      blk(cx, cy, 2.5, F('#9c6233'));
       circ(cx, cy, 10, '#3a2412');
       circ(cx - 3, cy - 1, 4, F('#f8c830')); circ(cx + 4, cy + 2, 3, F('#f8d860')); circ(cx, cy - 5, 3, F('#ffe890'));
-      rect(cx - 2, cy - 7, 1, 1, '#fff'); rect(cx + 5, cy + 1, 1, 1, '#fff');
       rect(cx + 11, cy - 14, 2, 28, '#5c3414'); rect(cx + 7, cy - 14, 2, 28, '#5c3414'); // cart track
       rect(cx - 14, cy + 12, 18, 2, trim);
       break;
     }
     case 'elixir': {
-      blk(cx, cy, 2.4, F('#a0a0b2'), F('#56566a'));
+      blk(cx, cy, 2.4, F('#a0a0b2'));
       circ(cx, cy, 10, F('#8e2aa8'));
       circ(cx, cy, 9, F('#e04ce8'));
-      circ(cx - 3, cy - 3, 3, F('#f8a8ff'));
-      rect(cx - 4, cy - 5, 1, 2, '#fff');
       rect(cx - 1, cy - 14, 3, 5, F('#5c3414'));
       rect(cx - 13, cy + 12, 26, 2, trim);
       break;
     }
     case 'goldstore': {
-      blk(cx, cy, 2.7, F('#c98a4b'), F('#6b3f1f'));
+      blk(cx, cy, 2.7, F('#c98a4b'));
       rect(cx - 12, cy - 12, 24, 24, F('#8a5226'));
       for (let i = 0; i < 9; i++) circ(cx - 7 + (i % 3) * 7, cy - 7 + Math.floor(i / 3) * 7, 3, F(i % 2 ? '#f8d860' : '#e8b020'));
       rect(cx - 15, cy - 1, 30, 2, F('#5c3414'));
@@ -1018,17 +1024,15 @@ function drawBuilding(b, cx, cy, opts) {
       break;
     }
     case 'elixstore': {
-      blk(cx, cy, 2.6, F('#a0a0b2'), F('#56566a'));
+      blk(cx, cy, 2.6, F('#a0a0b2'));
       circ(cx, cy, 13, F('#6b2a80'));
       circ(cx, cy, 12, F('#c03cd0'));
-      circ(cx - 4, cy - 4, 5, F('#f070f8'));
-      rect(cx - 6, cy - 7, 2, 3, '#fff');
       rect(cx - 12, cy - 1, 24, 2, F('#6b2a80'));
       rect(cx - 2, cy - 2, 4, 4, trim);
       break;
     }
     case 'builder': {
-      blk(cx, cy, 1.8, F('#e0503c'), F('#8a2420'));
+      blk(cx, cy, 1.8, F('#e0503c'));
       rect(cx - 9, cy - 1, 18, 2, F('#b8362a'));
       rect(cx + 4, cy - 9, 3, 4, F('#5c3414'));   // chimney
       rect(cx - 2, cy + 8, 4, 3, '#3a2010');       // door
@@ -1088,12 +1092,10 @@ function drawDecor(d) {
   if (cx < -20 || cx > W + 20 || cy < -20 || cy > H + 20) return;
   if (d.kind === 'tree') {
     const big = d.v > 0.5 ? 1 : 0;
-    circ(cx + 2, cy + 2, 6 + big, 'rgba(0,0,0,0.25)');
     circ(cx, cy, 6 + big, '#2f7a1e');
-    circ(cx - 1, cy - 1, 4 + big, '#3f9a28');
-    circ(cx - 2, cy - 2, 2, '#68c848');
+    circ(cx, cy, 4 + big, '#3f9a28');
   } else {
-    circ(cx, cy, 4, '#5f5f75'); circ(cx, cy, 3, '#7c7c90'); circ(cx - 1, cy - 1, 2, '#a8a8b8');
+    circ(cx, cy, 4, '#5f5f75'); circ(cx, cy, 3, '#7c7c90');
   }
 }
 
@@ -1214,7 +1216,7 @@ function drawBuildingAt(b) {
     if (nbr(0, 1)) { rect(cx - h - 1, cy, h * 2 + 2, T, '#14101c'); rect(cx - h, cy, h * 2, T, F(cols[0])); }
     if (nbr(-1, 0)) rect(cx - T, cy - h, T, h * 2, F(cols[0]));
     if (nbr(0, -1)) rect(cx - h, cy - T, h * 2, T, F(cols[0]));
-    blk(cx, cy, 0.7, F(cols[0]), F(cols[1]));
+    blk(cx, cy, 0.7, F(cols[0]));
     if (selectedId === b.id) drawSelect(cx, cy, s);
     return;
   }
@@ -1233,11 +1235,9 @@ function drawUnit(u, now) {
   if (cx < -30 || cx > W + 30 || cy < -40 || cy > H + 30) return;
   const tint = u.flash > 0 ? 'flash' : u.frozen > 0 ? 'ice' : null;
   const img = spriteCanvas(u.d.sprite, u.dir < 0, tint);
-  const lift = u.d.air ? 8 + Math.round(Math.sin(now / 160 + u.walk) * 2) : 0;
-  const bob = u.d.air || u.frozen > 0 ? 0 : (Math.floor(u.walk) % 2);
+  const bob = u.frozen > 0 ? 0 : u.d.air ? Math.round(Math.sin(now / 160 + u.walk)) : (Math.floor(u.walk) % 2);
   const lunge = u.swing ? u.dir * 2 : 0;
-  oval(cx, cy + 3, Math.ceil(img.width / 2.6), 2, 'rgba(0,0,0,0.3)');
-  const top = Math.round(cy + 4 - img.height - bob - lift);
+  const top = Math.round(cy - img.height / 2 - bob);
   g.drawImage(img, Math.round(cx - img.width / 2 + lunge), top);
   if (u.frozen > 0) { rect(cx - 1, top - 3, 3, 1, '#c8f0ff'); rect(cx, top - 4, 1, 3, '#c8f0ff'); }
   if (u.hp < u.maxhp) drawHpBar(cx, top - 4, Math.max(8, img.width - 2), u.hp / u.maxhp);
@@ -1258,9 +1258,7 @@ function drawShot(s) {
     line(x - Math.cos(a) * 4, y - Math.sin(a) * 4, x, y, s.kind === 'arrow' ? '#f4f4f4' : '#f8d090', 1);
   }
   else if (s.kind === 'shell') {
-    // a flat game shows the arc by growing the shell as it flies "up"
-    const k = Math.min(1, s.t / s.life), r = 2 + Math.round(Math.sin(k * Math.PI) * 2);
-    circ(x, y, r, '#1a1a24'); rect(x - 1, y - 1, 1, 1, '#8f8fa3');
+    circ(x, y, 2, '#1a1a24');
   }
   else if (s.kind === 'rocket') { rect(x - 1, y - 1, 3, 3, '#e03a30'); rect(x, y, 1, 1, '#ffe070'); }
   else if (s.kind === 'fire') { circ(x, y, 3, '#f8a830'); circ(x, y, 1, '#fff070'); }
@@ -1268,7 +1266,7 @@ function drawShot(s) {
 function drawFx(e) {
   const k = e.t / e.life;
   const x = sx(e.x), y = sy(0, e.y);
-  if (e.kind === 'bit') rect(x - 1, y - Math.round(e.z * 0.5) - 1, 2, 2, e.c);
+  if (e.kind === 'bit') rect(x - 1, y - 1, 2, 2, e.c);
   else if (e.kind === 'boom') {
     const r = Math.max(1, Math.round((2 + e.r * T * 0.6) * (0.4 + k)));
     circ(x, y, r, k < 0.5 ? (e.fire ? '#f8a830' : '#fff0a0') : '#f8a830');
@@ -1418,9 +1416,6 @@ const ICONS = {
   sword: ['..........ww', '.........wmw', '........wmw.', '.......wmw..', '..b...wmw...', '...b.wmw....', '....bmw.....', '....yb......', '...yby......', '..yy..b.....', '.yy.........', 'yy..........'],
   plus: ['............', '....wwww....', '....wwww....', '....wwww....', '.wwwwwwwwww.', '.wwwwwwwwww.', '.wwwwwwwwww.', '.wwwwwwwwww.', '....wwww....', '....wwww....', '....wwww....', '............'],
   minus: ['............', '............', '............', '............', '.wwwwwwwwww.', '.wwwwwwwwww.', '.wwwwwwwwww.', '.wwwwwwwwww.', '............', '............', '............', '............'],
-  sound: ['............', '.....w......', '....ww...w..', '...www....w.', 'wwwwww..w.w.', 'wwwwww...w.w', 'wwwwww...w.w', 'wwwwww..w.w.', '...www....w.', '....ww...w..', '.....w......', '............'],
-  mute: ['............', '.....w......', '....ww......', '...www......', 'wwwwww.r...r', 'wwwwww..r.r.', 'wwwwww...r..', 'wwwwww..r.r.', '...www.r...r', '....ww......', '.....w......', '............'],
-  menu: ['............', '............', '.wwwwwwwwww.', '.wwwwwwwwww.', '............', '.wwwwwwwwww.', '.wwwwwwwwww.', '............', '.wwwwwwwwww.', '.wwwwwwwwww.', '............', '............'],
   shop: ['............', '..rwrwrwrw..', '.rwrwrwrwrw.', 'rwrwrwrwrwrw', 'rrrrrrrrrrrr', '.bbbbbbbbbb.', '.bllbbbbllb.', '.bllbbbbllb.', '.bbbbnnbbbb.', '.bbbbnnbbbb.', '.bbbbnnbbbb.', 'kkkkkkkkkkkk'],
   sun: ['.....y......', '..y..y..y...', '...yyyyy....', '..yyyyyyy...', 'yyyyyyyyyyy.', '..yyyyyyy...', '..yyyyyyy...', '...yyyyy....', '..y..y..y...', '.....y......', '............', '............'],
   moon: ['............', '....wwww....', '...www......', '..www.......', '..ww........', '..ww........', '..www.......', '...wwww..w..', '....wwwwww..', '......ww....', '............', '............'],
@@ -1468,6 +1463,7 @@ function toast(msg, ms) {
 
 function refreshUI() {
   if (!S) return;
+  if (selectedId) renderSel();
   const day = S.phase !== 'night';
   const ph = $('phase');
   ph.classList.toggle('is-day', day);
@@ -1491,6 +1487,7 @@ function refreshUI() {
   $('speedBtn').textContent = 'x' + speed;
   $('placeBar').hidden = !placing;
   $('spellBar').hidden = S.phase !== 'day';
+  updateRepairAll();
   updateWave();
   updateSpells();
 }
@@ -1528,32 +1525,105 @@ function updateWave() {
   $('waveText').textContent = 'ENEMIES ' + left;
 }
 
+// ----- repairs -----
+// Damage now stays after a raid. Repairs cost gold: 40% of what the building is worth, scaled by the damage.
+function worth(b) {
+  const t = def(b);
+  let v = 0;
+  for (let l = 1; l <= Math.max(1, b.lvl); l++) { const c = t.cost[l - 1]; v += c ? c[0] + c[1] : (b.type === 'townhall' ? 1000 : 0); }
+  return Math.max(v, 50);
+}
+function missingHp(b) { return b.destroyed ? maxHp(b) : Math.max(0, maxHp(b) - b.hp); }
+function repairCost(b) {
+  const miss = missingHp(b);
+  if (miss <= 0) return 0;
+  return Math.max(1, Math.ceil((miss / maxHp(b)) * worth(b) * 0.4));
+}
+function damaged() { return S.buildings.filter((b) => missingHp(b) > 0); }
+function fixBuilding(b) {
+  const wasDown = b.destroyed;
+  b.destroyed = false; b.hp = maxHp(b); b.flash = 0;
+  if (wasDown) rebuildBlocked();
+  const c = center(b); floatText(c.x, c.y, '+', '#6fe03a');
+}
+function repair(b) {
+  const cost = repairCost(b);
+  if (!cost) return;
+  if (S.gold < cost) { toast('Not enough gold'); sfx('nope'); return; }
+  S.gold -= cost;
+  fixBuilding(b);
+  toast(`${def(b).name} repaired`);
+  sfx('build'); if (S.phase === 'night') save(); refreshUI(); renderSel(true);
+}
+function repairAll() {
+  const list = damaged().sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || repairCost(a) - repairCost(b));
+  if (!list.length) return;
+  let spent = 0, fixed = 0;
+  for (const b of list) {
+    const c = repairCost(b);
+    if (S.gold < c) continue;
+    S.gold -= c; spent += c; fixed++;
+    fixBuilding(b);
+  }
+  if (!fixed) { toast('Not enough gold'); sfx('nope'); return; }
+  toast(fixed === list.length ? `Repaired ${fixed} building${fixed > 1 ? 's' : ''} for ${fmt(spent)} gold` : `Repaired ${fixed} of ${list.length}. Not enough gold for the rest.`);
+  sfx('build'); if (S.phase === 'night') save(); refreshUI(); if (selectedId) renderSel(true);
+}
+function updateRepairAll() {
+  const btn = $('repairAllBtn');
+  const list = S.phase === 'night' || S.phase === 'day' ? damaged() : [];
+  btn.hidden = !list.length || !!placing;
+  if (btn.hidden) return;
+  const cost = list.reduce((a, b) => a + repairCost(b), 0);
+  $('repairAllText').textContent = `REPAIR ALL (${list.length}) · ${fmt(cost)}`;
+  btn.classList.toggle('off', S.gold < Math.min(...list.map(repairCost)));
+}
+
 // ----- selection panel -----
-function select(id) { selectedId = id; renderSel(); }
-function deselect() { selectedId = null; $('sel').hidden = true; }
-function renderSel() {
+// The panel is only rebuilt when its layout changes. Live numbers (HP, repair price) update in place,
+// so buttons stay clickable during a raid.
+let selKey = '';
+function select(id) { selectedId = id; renderSel(true); }
+function deselect() { selectedId = null; selKey = ''; $('sel').hidden = true; }
+function renderSel(force) {
   const b = byId(selectedId);
   const el = $('sel');
   if (!b) { deselect(); return; }
+  const key = [b.id, b.lvl, b.cons ? b.cons.days : '-', b.destroyed, S.phase, missingHp(b) > 0].join('|');
+  if (!force && key === selKey && !el.hidden) { updateSelLive(b); return; }
+  selKey = key;
   const t = def(b), lvl = b.lvl;
-  const night = S.phase === 'night';
+  const night = S.phase === 'night', fighting = S.phase === 'day';
   const shownLvl = Math.max(1, lvl);
   const stats = [];
-  stats.push(`<div>Hitpoints <b>${fmt(b.destroyed ? 0 : b.hp)}/${fmt(maxHp(b))}</b></div>`);
+  stats.push(`<div>Hitpoints <b id="selHp"></b></div>`);
   if (t.dmg) stats.push(`<div>Damage <b>${t.dmg[shownLvl - 1]}</b> per shot</div>`, `<div>Range <b>${t.range}</b> tiles</div>`, `<div>Targets <b>${t.air && t.ground ? 'Ground &amp; air' : t.air ? 'Air' : 'Ground'}</b></div>`);
   if (t.prod) stats.push(`<div>Makes <b>${fmt(t.prod[shownLvl - 1])}</b> a day</div>`);
   if (t.store) stats.push(`<div>Holds <b>${fmt(t.store[shownLvl - 1])}</b></div>`);
   if (t.cap) stats.push(`<div>Holds <b>${fmt(t.cap[shownLvl - 1])}</b> of each</div>`);
   let status = '';
   if (b.cons) status = lvl < 1 ? `Under construction: ready in ${daysLabel(b.cons.days)}.` : `Upgrading to level ${b.cons.to}: ready in ${daysLabel(b.cons.days)}. It won't work until then.`;
-  else if (b.destroyed) status = 'Destroyed. Builders will repair it tonight for free.';
+  else if (b.destroyed) status = 'Destroyed. It does nothing until you repair it.';
+  else if (missingHp(b) > 0) status = 'Damaged. Damage stays after the raid until you repair it.';
+  // what the next level brings
+  const next = lvl + 1;
+  let nextInfo = '';
+  if (lvl >= 1 && !b.cons && next <= t.max && t.cost[next - 1]) {
+    const bits = [`HP ${fmt(t.hp[lvl - 1])} → ${fmt(t.hp[next - 1])}`];
+    if (t.dmg) bits.push(`Damage ${t.dmg[lvl - 1]} → ${t.dmg[next - 1]}`);
+    if (t.prod) bits.push(`Makes ${fmt(t.prod[lvl - 1])} → ${fmt(t.prod[next - 1])}`);
+    if (t.store) bits.push(`Holds ${fmt(t.store[lvl - 1])} → ${fmt(t.store[next - 1])}`);
+    if (t.cap) bits.push(`Holds ${fmt(t.cap[lvl - 1])} → ${fmt(t.cap[next - 1])}`);
+    nextInfo = `<div class="next-lvl"><b>Level ${next}:</b> ${bits.join(' · ')}</div>`;
+  }
   const actions = [];
-  if (night && !b.cons && lvl >= 1) {
-    const next = lvl + 1;
+  if (missingHp(b) > 0) actions.push(`<button class="btn go" id="repairBtn">Repair <span class="cost" data-cost="gold" id="repairCost">${fmt(repairCost(b))}</span></button>`);
+  if (!b.cons && lvl >= 1) {
     if (next <= t.max && t.cost[next - 1]) {
       const p = t.cost[next - 1];
-      const cap = levelCap(b.type);
-      if (next > cap) actions.push(`<button class="btn" disabled>Needs Town Hall ${b.type === 'wall' ? next : next - 1}</button>`);
+      if (next > levelCap(b.type)) actions.push(`<button class="btn" disabled>Upgrade needs Town Hall ${b.type === 'wall' ? next : next - 1}</button>`);
+      else if (fighting) actions.push(`<button class="btn" disabled>Upgrade at night · ${costHTML(p)}</button>`);
+      else if (b.destroyed) actions.push(`<button class="btn" disabled>Repair before upgrading</button>`);
       else actions.push(`<button class="btn go" id="upBtn">Upgrade ${costHTML(p)} · ${daysLabel(p[2])}</button>`);
     } else if (t.max > 1) actions.push('<button class="btn" disabled>Max level</button>');
   }
@@ -1565,17 +1635,28 @@ function renderSel() {
       <button class="btn no close-x" id="selClose" aria-label="Close">&#x2716;</button>
     </div>
     <div class="sel-body">
-      <div class="hpbar"><i style="width:${b.destroyed ? 0 : (b.hp / maxHp(b)) * 100}%"></i></div>
+      <div class="hpbar"><i id="selBar"></i></div>
       <div class="stats">${stats.join('')}</div>
       ${status ? `<div class="note">${status}</div>` : `<div class="note">${t.desc}</div>`}
+      ${nextInfo}
       ${actions.length ? `<div class="sel-actions">${actions.join('')}</div>` : ''}
     </div>`;
   hydrateCosts(el);
   el.hidden = false;
+  updateSelLive(b);
   $('selClose').onclick = deselect;
+  const rp = $('repairBtn'); if (rp) rp.onclick = () => repair(b);
   const up = $('upBtn'); if (up) up.onclick = () => upgrade(b);
   const mv = $('moveBtn'); if (mv) mv.onclick = () => beginMove(b);
   const sl = $('sellBtn'); if (sl) sl.onclick = () => { S.buildings = S.buildings.filter((o) => o !== b); rebuildBlocked(); deselect(); save(); refreshUI(); sfx('click'); };
+}
+function updateSelLive(b) {
+  const hp = b.destroyed ? 0 : b.hp;
+  const h = $('selHp'); if (h) h.textContent = `${fmt(hp)}/${fmt(maxHp(b))}`;
+  const bar = $('selBar'); if (bar) bar.style.width = (hp / maxHp(b)) * 100 + '%';
+  const rc = $('repairCost');
+  if (rc) { const c = rc.lastChild; if (c && c.nodeType === 3) c.textContent = fmt(repairCost(b)); }
+  const rb = $('repairBtn'); if (rb) rb.classList.toggle('off', S.gold < repairCost(b));
 }
 function upgrade(b) {
   const t = def(b), next = b.lvl + 1, p = t.cost[next - 1];
@@ -1584,7 +1665,7 @@ function upgrade(b) {
   S.gold -= p[0]; S.elixir -= p[1];
   if (p[2] === 0) { b.lvl = next; b.hp = maxHp(b); toast(`${t.name} upgraded to level ${next}!`); }
   else { b.cons = { to: next, days: p[2] }; toast(`Upgrade started: ${daysLabel(p[2])}`); }
-  sfx('build'); save(); refreshUI(); renderSel();
+  sfx('build'); save(); refreshUI(); renderSel(true);
 }
 
 // ----- placing / moving -----
@@ -1734,6 +1815,7 @@ function showTitle() {
     <div class="how">
       <div><span data-ico="moon" data-px="18"></span><span>At night, build and upgrade your village. Bigger buildings take days to finish.</span></div>
       <div><span data-ico="sun" data-px="18"></span><span>By day, a wave of raiders attacks. Your defenses fight on their own, and you can cast spells to help.</span></div>
+      <div><span data-ico="hammer" data-px="18"></span><span>Tap a building to see it, repair it or upgrade it. Damage stays until you repair it.</span></div>
       <div><span data-ico="shield" data-px="18"></span><span>Keep your Town Hall standing. How many days can you last?</span></div>
     </div>
     ${best ? `<div class="loot"><div>BEST: ${best} DAYS</div></div>` : ''}
@@ -1749,31 +1831,21 @@ function showPatchNotes() {
     </section>`).join('');
   popup('PATCH NOTES', `<div class="patch-list">${body}</div>`, [['CLOSE', 'go', closeModal]], 'notes');
 }
-function showMenu() {
-  popup('PAUSED', `<p>Night ${S.day}. Your village saves itself every night.</p>`, [
-    ['NEW VILLAGE', 'no', () => { popup('START OVER?', '<p>This village will be lost.</p>', [['KEEP PLAYING', 'wood', closeModal], ['START OVER', 'no', () => { closeModal(); newGame(); rebuildBlocked(); units = []; shots = []; centerOn(15, 15); refreshUI(); }]]); }],
-    ['RESUME', 'go', closeModal],
-  ]);
-}
-
 $('versionBtn').textContent = 'v' + GAME_VERSION;
 $('versionBtn').onclick = () => { unlockAudio(); sfx('click'); showPatchNotes(); };
 buildSpellBar();
 $('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
+$('repairAllBtn').onclick = () => { unlockAudio(); repairAll(); };
 $('defendBtn').onclick = () => { unlockAudio(); startDay(); };
 $('zoomIn').onclick = () => setScale(clamp(scale + 1, 2, 6));
 $('zoomOut').onclick = () => setScale(clamp(scale - 1, 2, 6));
 $('speedBtn').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; refreshUI(); };
-$('menuBtn').onclick = () => { unlockAudio(); if (S.phase === 'night') showMenu(); else toast('Wait for the day to end'); };
-$('soundBtn').onclick = () => { muted = !muted; unlockAudio(); drawIcon($('soundIco'), muted ? 'mute' : 'sound'); $('soundBtn').setAttribute('aria-label', muted ? 'Sound off' : 'Sound on'); try { localStorage.setItem('clash-muted', muted ? '1' : '0'); } catch (e) { /* ignore */ } };
 document.querySelectorAll('canvas[data-icon]').forEach((c) => drawIcon(c, c.dataset.icon));
 
 /* =====================================================================
    SOUND: tiny square-wave effects, made on the fly
    ===================================================================== */
-let actx = null, muted = false, lastSfx = {};
-try { muted = localStorage.getItem('clash-muted') === '1'; } catch (e) { /* ignore */ }
-drawIcon($('soundIco'), muted ? 'mute' : 'sound');
+let actx = null, lastSfx = {};
 function unlockAudio() {
   if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
   try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
@@ -1795,7 +1867,7 @@ function noise(dur, vol, delay) {
 }
 // short vibrations on phones that support it (Android, and app wrappers)
 function buzz(pattern) {
-  if (muted || !navigator.vibrate) return;
+  if (!navigator.vibrate) return;
   try { navigator.vibrate(pattern); } catch (e) { /* not allowed here */ }
 }
 function sfx(name) {
@@ -1807,7 +1879,7 @@ function sfx(name) {
   else if (name === 'nope') buzz([20, 40, 20]);
   else if (name === 'lose') buzz([60, 60, 160]);
   else if (name === 'win') buzz([30, 50, 30]);
-  if (muted || !actx || actx.state !== 'running') return;
+  if (!actx || actx.state !== 'running') return;
   switch (name) {
     case 'cannon': tone(140, 0.12, 'square', 0.05, 0.4); noise(0.08, 0.04); break;
     case 'arrow': tone(900, 0.05, 'triangle', 0.025, 0.6); break;
@@ -1840,7 +1912,7 @@ function frame(now) {
     while (acc >= STEP && n++ < 12) { step(STEP); acc -= STEP; }
     render(now);
     uiTick += dt;
-    if (uiTick > 0.25) { uiTick = 0; if (S.phase === 'day') { updateWave(); for (const r of ['gold', 'elixir']) { $(r + 'Amt').textContent = fmt(S[r]); $(r + 'Fill').style.width = clamp(S[r] / capOf(r) * 100, 0, 100) + '%'; } updateSpells(); if (selectedId) renderSel(); } }
+    if (uiTick > 0.25) { uiTick = 0; if (S.phase === 'day') { updateWave(); for (const r of ['gold', 'elixir']) { $(r + 'Amt').textContent = fmt(S[r]); $(r + 'Fill').style.width = clamp(S[r] / capOf(r) * 100, 0, 100) + '%'; } updateSpells(); updateRepairAll(); if (selectedId) renderSel(); } }
   }
   requestAnimationFrame(frame);
 }
@@ -1853,4 +1925,4 @@ showTitle();
 requestAnimationFrame(frame);
 
 // hooks for automated tests
-window.ClashDebug = { get S() { return S; }, get units() { return units; }, step, startDay, startNight, waveFor, fits, getField, rebuildBlocked, endDay, priceOf, newGame, add, builders, limitOf, countOf, levelCap, canAfford, freeSpotFor, thLevel, closeModal, TYPES, previewCanvas, castSpell, armSpell, get spellCd() { return spellCd; }, SPELLS, GAME_VERSION, showPatchNotes };
+window.ClashDebug = { get S() { return S; }, get units() { return units; }, step, startDay, startNight, waveFor, fits, getField, rebuildBlocked, endDay, priceOf, newGame, add, builders, limitOf, countOf, levelCap, canAfford, freeSpotFor, thLevel, closeModal, TYPES, previewCanvas, tileToScreen: (x, y) => ({ x: (x * T - cam.x + W / 2) * scale, y: (y * T - cam.y + H / 2) * scale }), maxHpOf: maxHp, repairCost, castSpell, armSpell, get spellCd() { return spellCd; }, SPELLS, GAME_VERSION, showPatchNotes };

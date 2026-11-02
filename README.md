@@ -22,9 +22,12 @@ screen and works offline.
   spells (Lightning, Freeze, Heal) for elixir: tap a spell, then tap the map.
   Keys 1–3 pick a spell on a keyboard.
 - Survive and night falls straight away, with your income added.
+- Tap any building to see its stats, repair it or upgrade it. Damage stays
+  after a raid until you pay gold to repair it, and you can repair mid-raid.
+  **Repair All** fixes everything at once. Upgrades start at night.
 - The moment your Town Hall falls, the game is over. The village saves itself
   every night.
-- The whole game is flat 2D, seen from above. Tap the version number in the top
+- The whole game is flat 2D, seen from above, with no shading or depth. Tap the version number in the top
   left to read the patch notes.
 
 ## Files
