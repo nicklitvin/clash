@@ -21,18 +21,20 @@ screen and works offline.
   tap or drag to lay many at once, then confirm to buy them all.
 - **Night: fight.** A wave attacks in the dark. Your defenses fight on their own.
 - After each night, a summary shows what your Gold Mines and Elixir Collectors
-  earned before you start the next day.
+  earned before you start the next day. There is no extra survival bonus.
 - Tap any building to see its stats, repair it or upgrade it. Damage stays
   until you pay gold to repair it, and you can repair mid-raid. **Repair** in
   the bottom left fixes everything at once.
 - **Spells (Town Hall 4):** build a Spell Factory, brew Lightning, Heal and
   Freeze by day, and cast them at night (tap a spell, then tap the map; keys
   1–3 also work).
-- Zoom with the + / − buttons, the mouse wheel, the keyboard or a pinch.
+- Zoom with the mouse wheel, a pinch, or the + / − keys.
+- The Town Hall stores gold and elixir first; anything over its limit is split
+  evenly across your storages. Tap a building to see how much it holds.
 - The moment your Town Hall falls, the game is over. The village saves itself
   every day.
-- Flat 2D pixel art: the map is seen from above, and buildings are drawn from
-  the side. Tap the version number in the top left to read the patch notes.
+- Cute, simple pixel art in the style of a handheld RPG: a top-down map with
+  little houses and chibi raiders. Tap the version number in the top left to read the patch notes.
 
 ## Files
 

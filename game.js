@@ -51,11 +51,11 @@ const TYPES = {
   goldstore: { name: 'Gold Storage', size: 3, cat: 'resource', res: 'gold', max: 4,
     hp: [600, 800, 1000, 1300], store: [1500, 3500, 7000, 15000],
     cost: [[0, 300, 1], [0, 1200, 1], [0, 3500, 1], [0, 8000, 2]],
-    desc: 'Holds more gold. Goblins go straight for it.' },
+    desc: 'Holds gold once the Town Hall is full. Goblins go straight for it.' },
   elixstore: { name: 'Elixir Storage', size: 3, cat: 'resource', res: 'elixir', max: 4,
     hp: [600, 800, 1000, 1300], store: [1500, 3500, 7000, 15000],
     cost: [[300, 0, 1], [1200, 0, 1], [3500, 0, 1], [8000, 0, 2]],
-    desc: 'Holds more elixir. Goblins go straight for it.' },
+    desc: 'Holds elixir once the Town Hall is full. Goblins go straight for it.' },
   builder: { name: "Builder's Hut", size: 2, cat: 'other', max: 1,
     hp: [250], cost: [[1000, 0, 1]],
     desc: 'Each hut gives you one builder. Builders work on one project at a time.' },
@@ -88,8 +88,18 @@ const UNITS = {
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '0.4.0';
+const GAME_VERSION = '0.5.0';
 const PATCH_NOTES = [
+  { v: '0.5.0', date: 'Nov 6, 2026', notes: [
+    'A cuter look: bigger tiles, soft colours, grass with flowers, puffy trees and a forest around the map.',
+    'Buildings redrawn as little houses with big roofs, and raiders are now cute chibi characters.',
+    'Lighter, friendlier menus and panels.',
+    'Zoom out much further with the mouse wheel, a pinch or the + and - keys. The zoom buttons are gone.',
+    'No more bonus resources after a night. Only your mines and collectors earn.',
+    'The Town Hall now stores resources first; anything over its limit is split across your storages.',
+    'Tap the Town Hall or a storage to see exactly how much it holds. Storages fill up visibly as they get fuller.',
+    'Goblins can only steal what the building they hit is actually holding.',
+  ] },
   { v: '0.4.0', date: 'Nov 2, 2026', notes: [
     'Day and night swapped: build by day, fight by night. Night is dark so you always know which is which.',
     'After each night, a summary shows what your Gold Mines and Elixir Collectors earned before the next day starts.',
@@ -141,7 +151,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const fmt = (n) => Math.floor(n).toLocaleString('en-US');
-const T = 12;              // pixels per tile on the low-res canvas (flat, top-down)
+const T = 16;              // pixels per tile on the low-res canvas
 
 // ---------- state ----------
 let S = null;            // persistent village state
@@ -194,6 +204,27 @@ function capOf(res) {
     if ((res === 'gold' && b.type === 'goldstore') || (res === 'elixir' && b.type === 'elixstore')) cap += def(b).store[b.lvl - 1];
   }
   return cap;
+}
+// Where resources live: the Town Hall fills first, the rest is split evenly across that resource's storages
+// (a storage that is full passes its share on to the others).
+function storageSplit(res) {
+  const total = S[res], thCap = TYPES.townhall.cap[thLevel() - 1];
+  const out = new Map([['th', Math.min(total, thCap)]]);
+  let rest = total - out.get('th');
+  const kind = res === 'gold' ? 'goldstore' : 'elixstore';
+  const stores = S.buildings.filter((b) => b.type === kind && b.lvl >= 1).sort((a, b) => def(a).store[a.lvl - 1] - def(b).store[b.lvl - 1]);
+  stores.forEach((b, i) => { const give = Math.min(def(b).store[b.lvl - 1], rest / (stores.length - i)); out.set(b.id, give); rest -= give; });
+  return out;
+}
+function storedIn(b, res) {
+  if (b.type === 'townhall') return storageSplit(res).get('th');
+  if ((b.type === 'goldstore' && res === 'gold') || (b.type === 'elixstore' && res === 'elixir')) return storageSplit(res).get(b.id) || 0;
+  return 0;
+}
+function storedFrac(b) {
+  if (!b.id || !S) return 0.6;   // shop pictures
+  const res = b.type === 'goldstore' ? 'gold' : 'elixir';
+  return b.lvl >= 1 ? clamp(storedIn(b, res) / def(b).store[b.lvl - 1], 0, 1) : 0;
 }
 function gain(res, amount) { S[res] = clamp(S[res] + amount, 0, capOf(res)); }
 function priceOf(type, lvl) {
@@ -407,16 +438,15 @@ function nightIncome() {
     const amount = def(b).prod[b.lvl - 1];
     if (def(b).res === 'gold') { r.mines++; r.mineGold += amount; } else { r.pumps++; r.pumpElixir += amount; }
   }
-  r.bonus = 200 + S.day * 90;
   return r;
 }
 function showNightSummary() {
   $('banner').hidden = true; clearTimeout(toastTimer); $('toast').classList.remove('show');
   const r = nightIncome();
   const before = { g: S.gold, e: S.elixir };
-  gain('gold', r.mineGold + r.bonus); gain('elixir', r.pumpElixir + r.bonus);
+  gain('gold', r.mineGold); gain('elixir', r.pumpElixir);
   const gotG = S.gold - before.g, gotE = S.elixir - before.e;
-  const lostG = r.mineGold + r.bonus - gotG, lostE = r.pumpElixir + r.bonus - gotE;
+  const lostG = r.mineGold - gotG, lostE = r.pumpElixir - gotE;
   const stolen = raidStats.stolenGold + raidStats.stolenElixir;
   const hurt = damaged().length;
   const row = (ico, label, val, cls) => `<div class="sum-row ${cls || ''}"><span data-ico="${ico}" data-px="18"></span><span class="sum-label">${label}</span><b>${val}</b></div>`;
@@ -425,7 +455,6 @@ function showNightSummary() {
     <div class="summary">
       ${row('gold', `Gold Mines (${r.mines})`, '+' + fmt(r.mineGold))}
       ${row('elixir', `Elixir Collectors (${r.pumps})`, '+' + fmt(r.pumpElixir))}
-      ${row('shield', 'Survival bonus', `+${fmt(r.bonus)} each`)}
       ${stolen ? row('sword', 'Goblins stole', '-' + fmt(stolen), 'bad') : ''}
       ${lostG + lostE > 0 ? row('clock', 'Storage full, lost', fmt(lostG + lostE), 'bad') : ''}
       ${r.idle ? `<div class="sum-note">${r.idle} mine${r.idle > 1 ? 's or collectors were' : ' or collector was'} broken or upgrading and earned nothing.</div>` : ''}
@@ -492,7 +521,7 @@ function hurtBuilding(b, dmg, attacker) {
 function steal(b, dmg) {
   const t = def(b);
   const take = (res) => {
-    const amount = Math.min(S[res], Math.round(dmg * 1.6));
+    const amount = Math.min(Math.floor(storedIn(b, res)), Math.round(dmg * 1.6));   // only what this building holds
     if (amount <= 0) return;
     S[res] -= amount;
     if (res === 'gold') raidStats.stolenGold += amount; else raidStats.stolenElixir += amount;
@@ -781,86 +810,101 @@ function updateFx(dt) {
    ===================================================================== */
 const canvas = $('game');
 let g = canvas.getContext('2d');
-let scale = 3, W = 0, H = 0;      // low-res size
+let scale = 2, W = 0, H = 0;      // low-res size
+const ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3, 4];   // canvas pixel sizes; below 1 shows more of the map than fits 1:1
 const cam = { x: 0, y: 0 };       // world pixel at the low-res canvas centre
 
+// soft, bright palette (cute top-down RPG look)
 const PAL = {
-  k: '#1a1a24', s: '#f2b880', S: '#c98a5a', y: '#f8d030', Y: '#c8960e', b: '#8a5a2a', B: '#5c3a18',
-  w: '#ececf4', m: '#9a9aae', M: '#5f5f75', g: '#58b838', G: '#2f7a1e', p: '#f070b0', P: '#b03878',
-  r: '#e03a30', R: '#8a1a1a', o: '#f08a30', u: '#4a6ad8', U: '#283c8a', e: '#e04ce8', l: '#7cd8f8', n: '#3a2a18',
+  k: '#383848', s: '#f8d0a8', S: '#e0a878', y: '#f8d848', Y: '#d8a820', b: '#a86838', B: '#784828',
+  w: '#f8f8f8', m: '#b8b8c8', M: '#686880', g: '#78d050', G: '#48a038', p: '#f890c0', P: '#d05890',
+  r: '#f05050', R: '#b03030', o: '#f8a048', u: '#5890f0', U: '#3860c0', e: '#c070f0', l: '#98e0f8', n: '#583828',
 };
-// 8-bit troop sprites, facing right
+// chibi troop sprites (big heads, small bodies), facing right
 const SPRITES = {
   barb: [
-    '...yyy...',
-    '..yyyyy..',
-    '..ysksy..',
-    '..sssss.w',
-    '...rrr..w',
-    '..srrrs.w',
-    '..sbbbsmm',
-    '...b.b...',
-    '...n.n...',
+    '...yyyyy....',
+    '..yyyyyyy...',
+    '.yyyyyyyyy..',
+    '.yysssssyy..',
+    '.ysssksksy..',
+    '..ssssssps..',
+    '...sssss..m.',
+    '..rrrrrrr.m.',
+    '.srrrrrrrsm.',
+    '..rrrrrrr...',
+    '...bb..bb...',
+    '...nn..nn...',
   ],
   arch: [
-    '...ppp...',
-    '..ppppp.b',
-    '..psksp.b',
-    '...sss..b',
-    '...ggg.sb',
-    '..sgggs.b',
-    '...GGG..b',
-    '...s.s...',
-    '...n.n...',
+    '...ppppp....',
+    '..ppppppp...',
+    '.ppppppppp..',
+    '.ppsssssp..b',
+    '.psssksksp.b',
+    '..sssssps..b',
+    '...sssss...b',
+    '..ggggggg.sb',
+    '.sggggggg..b',
+    '..GGGGGGG...',
+    '...ss..ss...',
+    '...nn..nn...',
   ],
   gob: [
-    '.........',
-    'g..ggg..g',
-    '.ggkgkgg.',
-    '...ggg...',
-    '..bbbbb..',
-    '..gbbbg..',
-    '...b.b...',
-    '...g.g...',
+    'g.........g.',
+    'gg.ggggg.gg.',
+    '.ggggggggg..',
+    '.ggkggggkg..',
+    '.ggggggggg..',
+    '..ggwwwgg...',
+    '...ggggg....',
+    '..bbbbbbb...',
+    '.gbbbbbbbg..',
+    '..bbbbbbb...',
+    '...gg.gg....',
   ],
   giant: [
-    '....oooo.....',
-    '...oooooo....',
-    '...osssso....',
-    '...sksksk....',
-    '....ssss.....',
-    '..bbbbbbbb...',
-    '.sbbbbbbbbs..',
-    'ssbbbbbbbbss.',
-    'ss.bbbbbb.ss.',
-    '...uuuuuu....',
-    '...uu..uu....',
-    '...uu..uu....',
-    '..nnn..nnn...',
+    '....oooooo....',
+    '...oooooooo...',
+    '..oossssssoo..',
+    '..osssksksso..',
+    '..ossssssss...',
+    '...ssspPsss...',
+    '....ssssss....',
+    '..uuuuuuuuuu..',
+    '.suuuuuuuuuus.',
+    'ssuuuuuuuuuuss',
+    'ss.uuuuuuuu.ss',
+    '...bbbbbbbb...',
+    '...bbb..bbb...',
+    '..nnnn..nnnn..',
   ],
   wb: [
-    '...kk...',
-    '..kkkk.y',
-    '.kkkkkky',
-    '.kkkkkk.',
-    '..kkkk..',
-    '..wkkw..',
-    '..wwww..',
-    '...ww...',
-    '..w..w..',
-    '..w..w..',
+    '.......yy...',
+    '......y.....',
+    '...MMMMM....',
+    '..MMMMMMM...',
+    '.MMMMMMMMM..',
+    '.MMwkMMwkM..',
+    '.MMwkMMwkM..',
+    '.MMMMMMMMM..',
+    '..MMMMMMM...',
+    '...MMMMM....',
+    '...ss..ss...',
+    '...nn..nn...',
   ],
   drag: [
-    '..R.........R..',
-    '.RrR.......RrR.',
-    'RrrrR.....RrrrR',
-    '.RrrrR...RrrrR.',
-    '..RrrrrrrrrrRkw',
-    '....rrrrrrrrrrr',
-    '...rryyyyyyrr..',
-    '..rr.yyyyyy....',
-    '.rr...r...r....',
-    'r.............. ',
+    '..R.........R...',
+    '.RrR.......RrR..',
+    'RrrrR.....RrrrR.',
+    '.RrrrR...RrrrR..',
+    '..RRrrrrrrrRR.rr',
+    '....rrrrrrrrrrrr',
+    '....rryyyyyrrkrw',
+    '...rryyyyyyrrrr.',
+    '..rr.yyyyyy.....',
+    '.rr..r....r.....',
+    'r...............',
   ],
 };
 const spriteCache = {};
@@ -884,7 +928,7 @@ function spriteCanvas(name, flip, tint) {
       x.fillRect(px + 1 + ox, r + 1 + oy, 1, 1);
     }
   };
-  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) paint(ox, oy, '#14101c');
+  for (const [ox, oy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) paint(ox, oy, '#383848');
   paint(0, 0, null);
   spriteCache[key] = c;
   return c;
@@ -952,223 +996,221 @@ const textWidth = (s) => s.length * 4 - 1;
 const sx = (x) => Math.round(x * T - cam.x + W / 2);
 const sy = (x, y) => Math.round(y * T - cam.y + H / 2);
 
-// ---------- building art (side view: every building is drawn from the front, standing on its footprint) ----------
-const LEVEL_TRIM = ['#b7b7c4', '#d8b878', '#8fc8f0', '#f8c830', '#f070f0'];
-const WALL_COLS = [['#b7b7c4', '#6f6f85'], ['#d8b878', '#8a6a32'], ['#7a7a96', '#3c3c52'], ['#f8d860', '#a87c10']];
-const INK = '#14101c';
-function orect(x, y, w, h, fill) {         // outlined flat rectangle
-  rect(x - 1, y - 1, w + 2, h + 2, INK);
+// ---------- building art: cute top-down RPG style (a front wall with a big roof, soft colours, rounded outlines) ----------
+const LEVEL_TRIM = ['#c8c8d8', '#f0b860', '#78c8f8', '#f8d848', '#f890e8'];
+const INK = '#383848';
+function rr(x, y, w, h, fill) {            // rounded, outlined rectangle (corner pixels left off the outline)
+  x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+  rect(x - 1, y, w + 2, h, INK);
+  rect(x, y - 1, w, h + 2, INK);
   rect(x, y, w, h, fill);
 }
-function tri(cx, baseY, halfW, h, col) {   // flat pixel triangle (roofs, mounds), outlined
-  const rows = (hw, hh, c, oy) => {
-    g.fillStyle = c;
-    for (let r = 0; r < hh; r++) {
-      const w = Math.max(1, Math.round(hw * (r + 1) / hh));
-      g.fillRect(Math.round(cx - w), Math.round(baseY - hh + r + oy), w * 2, 1);
-    }
-  };
-  rows(halfW + 1, h + 1, INK, 0);
-  rows(halfW, h, col, 0);
-}
 function ocirc(cx, cy, r, col) { circ(cx, cy, r + 1, INK); circ(cx, cy, r, col); }
-// how tall each building's art stands above its ground line, in pixels (for badges and HP bars)
-const artHeight = (b) => (b.destroyed ? 8 : b.lvl < 1 ? Math.min(26, def(b).size * 7) : b.type === 'wall' ? 15 : def(b).size * T + 4);
+function roof(x, y, w, h, col, dark) {     // a striped roof with a darker eave
+  rr(x, y, w, h, col);
+  for (let ly = y + 3; ly < y + h - 3; ly += 4) rect(x + 1, ly, w - 2, 1, dark);
+  rect(x, y + h - 2, w, 2, dark);
+}
+// how tall each building's art stands above its front edge, in pixels (for badges and HP bars)
+const ART_H = { townhall: 50, cannon: 24, archer: 46, mortar: 26, airdef: 36, wall: 14, goldmine: 26, elixir: 32, goldstore: 28, elixstore: 34, builder: 26, spellfactory: 44 };
+const artHeight = (b) => (b.destroyed ? 8 : b.lvl < 1 ? 20 : ART_H[b.type] || 30);
 
 function drawBuilding(b, cx, cy, opts) {
   const t = def(b), s = t.size, lvl = Math.max(1, b.lvl);
   const ghost = opts && opts.ghost;
-  const base = Math.round(cy + (s * T) / 2);   // ground line (the front edge of the footprint)
-  if (!ghost && !(opts && opts.noPad)) sq(cx, cy, s, '#4e9a2c');
+  const base = Math.round(cy + (s * T) / 2) - 2;   // the front edge the building stands on
+  if (!ghost && !(opts && opts.noPad)) sq(cx, cy, s, '#7cc458');
   if (b.destroyed) { drawRubble(cx, base, s); return; }
   if (b.lvl < 1) { drawScaffold(cx, base, s, b); return; }
   const trim = LEVEL_TRIM[clamp(lvl - 1, 0, 4)];
   const F = (c) => (b.flash > 0 ? '#ffffff' : c);
   switch (b.type) {
     case 'townhall': {
-      const roofs = ['#e0503c', '#4a7ae0', '#58b838', '#3a3a4a', '#f8c830'];
-      orect(cx - 22, base - 6, 44, 6, F('#8c8ca0'));               // stone foundation
-      orect(cx - 20, base - 24, 40, 18, F('#e8d0a0'));             // plaster walls
-      for (const px of [-20, -7, 5, 18]) rect(cx + px, base - 24, 2, 18, F('#6b3f1f'));  // timber posts
-      rect(cx - 20, base - 15, 40, 2, F('#6b3f1f'));
-      orect(cx - 16, base - 22, 6, 5, '#3a5a9a'); orect(cx + 10, base - 22, 6, 5, '#3a5a9a');
-      orect(cx - 4, base - 15, 8, 9, '#5c3414');                   // door
-      tri(cx, base - 24, 25, 16, F(roofs[lvl - 1]));               // roof
-      rect(cx - 24, base - 25, 48, 2, trim);
-      line(cx, base - 40, cx, base - 50, '#3a2a18');               // flag
-      rect(cx + 1, base - 50, 7, 4, '#e03a30');
+      const roofs = [['#f06058', '#c84040'], ['#5890f0', '#3868c8'], ['#68c050', '#48983a'], ['#a070e0', '#7850b8'], ['#f8c840', '#d09820']][lvl - 1];
+      rr(cx - 26, base - 22, 52, 21, F('#f8f0d8'));
+      rr(cx - 21, base - 17, 8, 7, '#a0d8f8'); rr(cx + 13, base - 17, 8, 7, '#a0d8f8');
+      rr(cx - 6, base - 14, 12, 13, '#a0d8f8'); rect(cx, base - 14, 1, 13, '#6098d0');   // glass doors
+      rect(cx - 9, base - 1, 18, 2, '#d0d0d8');
+      roof(cx - 30, base - 48, 60, 28, F(roofs[0]), F(roofs[1]));
+      ocirc(cx, base - 35, 6, '#f8f8f8'); circ(cx, base - 35, 3, trim);                   // crest
       break;
     }
     case 'cannon': {
-      orect(cx - 15, base - 6, 30, 6, F('#a0a0b2'));
-      rect(cx - 15, base - 6, 30, 1, trim);
-      orect(cx - 8, base - 13, 16, 7, F('#8a5226'));               // carriage
+      rr(cx - 18, base - 8, 36, 7, F('#d8d8e0'));
+      rect(cx - 17, base - 6, 34, 1, trim);
       const d = Math.cos(b.angle) >= 0 ? 1 : -1, kick = b.recoil ? 2 : 0;
-      const ex = cx + d * (15 - kick), ey = base - 19;
-      line(cx - d * 3, base - 14, ex, ey, INK, 7);
-      line(cx - d * 3, base - 14, ex, ey, F('#2a2a36'), 5);
-      ocirc(Math.round(ex), Math.round(ey), 2, '#101018');
-      for (const wx of [-5, 5]) { ocirc(cx + wx, base - 5, 3, F('#5c3414')); rect(cx + wx, base - 5, 1, 1, '#c98a4b'); }
+      const bx = cx - d * 3, by = base - 15, ex = cx + d * (15 - kick), ey = base - 19;
+      line(bx, by, ex, ey, INK, 9);
+      ocirc(bx, by, 7, F('#686880'));
+      line(bx, by, ex, ey, F('#686880'), 7);
+      ocirc(Math.round(ex), Math.round(ey), 3, '#282838');
+      circ(bx - 2, by - 3, 1, '#9898b0');                                             // shine
+      for (const wx of [-7, 7]) { ocirc(cx + wx, base - 6, 4, F('#a86838')); rect(cx + wx, base - 6, 1, 1, '#583828'); }
       break;
     }
     case 'archer': {
-      for (const px of [-13, 10]) orect(px + cx, base - 24, 3, 24, F('#7a4a22'));   // legs
-      line(cx - 11, base - 2, cx + 10, base - 22, F('#5c3414'), 1);
-      line(cx + 10, base - 2, cx - 11, base - 22, F('#5c3414'), 1);
-      orect(cx - 16, base - 29, 32, 5, F('#c98a4b'));              // platform
-      rect(cx - 15, base - 25, 30, 1, trim);
+      rr(cx - 15, base - 28, 4, 27, F('#a86838')); rr(cx + 11, base - 28, 4, 27, F('#a86838'));
+      rect(cx - 11, base - 12, 22, 2, F('#c88850'));
+      rr(cx - 18, base - 32, 36, 6, F('#e8c890'));                                    // platform
+      rect(cx - 17, base - 28, 34, 1, trim);
       const ac = spriteCanvas('arch', Math.cos(b.angle) < 0, null);
-      g.drawImage(ac, Math.round(cx - ac.width / 2), Math.round(base - 29 - ac.height + 2));
-      rect(cx - 16, base - 34, 2, 5, F('#7a4a22')); rect(cx + 14, base - 34, 2, 5, F('#7a4a22'));
-      rect(cx - 16, base - 34, 32, 2, F('#7a4a22'));               // railing in front of the archer
+      g.drawImage(ac, Math.round(cx - ac.width / 2), Math.round(base - 32 - ac.height + 2));
+      rr(cx - 18, base - 35, 3, 4, F('#c88850')); rr(cx + 15, base - 35, 3, 4, F('#c88850'));
+      rr(cx - 18, base - 35, 36, 2, F('#c88850'));                                    // railing
       break;
     }
     case 'mortar': {
-      orect(cx - 14, base - 8, 28, 8, F('#b0b0c0'));
-      rect(cx - 14, base - 8, 28, 1, trim);
+      rr(cx - 17, base - 8, 34, 7, F('#d8d8e0'));
       const lift = b.recoil ? 1 : 0;
-      orect(cx - 8, base - 19 - lift, 16, 11, F('#30303c'));       // squat barrel pointing up
-      orect(cx - 9, base - 22 - lift, 18, 3, F('#45455a'));
-      rect(cx - 7, base - 21 - lift, 14, 1, '#0e0e14');            // the mouth
-      rect(cx - 8, base - 14 - lift, 16, 2, trim);
+      rr(cx - 10, base - 21 - lift, 20, 14, F('#686880'));
+      rr(cx - 12, base - 25 - lift, 24, 5, F('#7c7c94'));
+      rect(cx - 10, base - 24 - lift, 20, 2, '#282838');
+      rect(cx - 10, base - 15 - lift, 20, 2, trim);
       break;
     }
     case 'airdef': {
-      orect(cx - 13, base - 7, 26, 7, F('#a0a0b2'));
-      orect(cx - 6, base - 22, 12, 15, F('#4a64a8'));
-      rect(cx - 6, base - 15, 12, 2, trim);
-      for (const dx of [-5, 0, 5]) {
-        orect(cx + dx - 1, base - 31, 3, 9, F('#e8e8f0'));
-        rect(cx + dx - 1, base - 33, 3, 2, F('#e03a30'));
-      }
+      rr(cx - 16, base - 8, 32, 7, F('#d8d8e0'));
+      rr(cx - 9, base - 24, 18, 17, F('#5890f0'));
+      rect(cx - 9, base - 17, 18, 2, trim);
+      for (const dx of [-6, 0, 6]) { rr(cx + dx - 2, base - 34, 4, 10, F('#f8f8f8')); rect(cx + dx - 2, base - 35, 4, 2, F('#f06058')); }
       break;
     }
-    case 'wall': {
-      drawWallBlock(cx, base, lvl, F, false, false);
-      break;
-    }
+    case 'wall': drawWallBlock(cx, base, lvl, F, false, false); break;
     case 'goldmine': {
-      tri(cx, base, 17, 22, F('#7a6a58'));                         // rocky hill
-      orect(cx - 6, base - 13, 12, 13, '#2a1a10');                 // mine entrance
-      rect(cx - 8, base - 14, 2, 14, F('#8a5226')); rect(cx + 6, base - 14, 2, 14, F('#8a5226'));
-      rect(cx - 9, base - 16, 18, 3, F('#8a5226'));
-      rect(cx - 9, base - 16, 18, 1, trim);
-      orect(cx + 7, base - 8, 9, 5, F('#5f5f75'));                 // ore cart
-      circ(cx + 9, base - 10, 2, F('#f8c830')); circ(cx + 13, base - 10, 2, F('#f8d860'));
-      ocirc(cx + 9, base - 2, 1, '#2a2a36'); ocirc(cx + 14, base - 2, 1, '#2a2a36');
+      oval(cx, base - 11, 21, 12, INK); oval(cx, base - 11, 20, 11, F('#b8a890'));     // rocky hill
+      circ(cx - 12, base - 14, 2, '#988870'); circ(cx + 13, base - 10, 2, '#988870');
+      rr(cx - 6, base - 14, 12, 13, '#383848');                                         // cave
+      rr(cx - 8, base - 16, 3, 15, F('#a86838')); rr(cx + 5, base - 16, 3, 15, F('#a86838'));
+      rr(cx - 9, base - 18, 18, 3, F('#c88850')); rect(cx - 8, base - 17, 16, 1, trim);
+      rr(cx + 10, base - 7, 10, 6, F('#888898'));                                       // cart of gold
+      circ(cx + 13, base - 8, 2, '#f8d848'); circ(cx + 17, base - 8, 2, '#f8e070');
       break;
     }
     case 'elixir': {
-      orect(cx - 12, base - 6, 24, 6, F('#a0a0b2'));
-      rect(cx - 12, base - 6, 24, 1, trim);
-      rect(cx - 1, base - 14, 3, 8, F('#5c3414'));
-      ocirc(cx, base - 21, 8, F('#e04ce8'));                       // glass bulb
-      rect(cx - 8, base - 21, 16, 1, F('#8e2aa8'));
-      line(cx + 9, base - 7, cx + 15, base - 16, F('#5f5f75'), 2); // pump arm
+      rr(cx - 13, base - 6, 26, 5, F('#d8d8e0'));
+      rect(cx - 12, base - 5, 24, 1, trim);
+      rr(cx - 1, base - 14, 3, 8, F('#a86838'));
+      ocirc(cx, base - 22, 9, F('#f078c8'));
+      circ(cx - 3, base - 25, 2, '#ffd0f0');                                            // shine
+      rect(cx - 9, base - 21, 18, 1, F('#c050a0'));
+      line(cx + 10, base - 6, cx + 16, base - 16, INK, 3); line(cx + 10, base - 6, cx + 16, base - 16, F('#a8a8b8'), 1);
       break;
     }
     case 'goldstore': {
-      for (let i = 0; i < 7; i++) circ(cx - 10 + i * 3.3, base - 22 + (i % 2), 3, F(i % 2 ? '#f8d860' : '#e8b020'));
-      orect(cx - 15, base - 16, 30, 16, F('#8a5226'));             // chest
-      orect(cx - 16, base - 20, 32, 4, F('#a86a32'));              // lid
-      rect(cx - 11, base - 16, 2, 16, F('#5c3414')); rect(cx + 9, base - 16, 2, 16, F('#5c3414'));
-      orect(cx - 2, base - 13, 4, 4, trim);
+      const k = storedFrac(b);
+      for (let i = 0; i < Math.round(k * 7); i++) ocirc(cx - 10 + i * 3.4, base - 24 + (i % 2), 3, F(i % 2 ? '#f8e070' : '#f8c838'));
+      rr(cx - 17, base - 18, 34, 17, F('#d08040'));                                    // chest
+      rr(cx - 18, base - 23, 36, 6, F('#e89850'));                                     // lid
+      rect(cx - 11, base - 17, 3, 16, F('#f8d848')); rect(cx + 8, base - 17, 3, 16, F('#f8d848'));
+      rr(cx - 3, base - 16, 6, 5, trim);
       break;
     }
     case 'elixstore': {
-      orect(cx - 13, base - 6, 26, 6, F('#a0a0b2'));
-      ocirc(cx, base - 19, 12, F('#c03cd0'));                      // big tank
-      rect(cx - 12, base - 19, 24, 2, F('#6b2a80'));
-      orect(cx - 3, base - 34, 6, 3, F('#6b2a80'));
-      rect(cx - 12, base - 6, 24, 1, trim);
+      rr(cx - 14, base - 6, 28, 5, F('#d8d8e0'));
+      const r = 13, cyT = base - 20, level = cyT + r - Math.round(storedFrac(b) * r * 2);
+      circ(cx, cyT, r + 1, INK);
+      g.fillStyle = F('#f0f0f8');
+      for (let dy = -r; dy <= r; dy++) {
+        const w = Math.floor(Math.sqrt(r * r - dy * dy) + 0.35);
+        g.fillStyle = cyT + dy >= level ? F('#f078c8') : F('#f0f0f8');
+        g.fillRect(cx - w, cyT + dy, w * 2 + 1, 1);
+      }
+      circ(cx - 5, cyT - 6, 2, '#ffffff');
+      rr(cx - 3, base - 36, 6, 3, F('#c050a0'));
+      rect(cx - 13, base - 5, 26, 1, trim);
       break;
     }
     case 'builder': {
-      orect(cx - 9, base - 10, 18, 10, F('#c98a4b'));
-      orect(cx - 2, base - 7, 4, 7, '#3a2010');
-      rect(cx + 5, base - 21, 3, 6, F('#5c3414'));                 // chimney
-      tri(cx, base - 10, 12, 10, F('#e0503c'));
+      rr(cx - 11, base - 10, 22, 9, F('#f8f0d8'));
+      rr(cx - 2, base - 8, 4, 7, '#a86838');
+      rr(cx + 6, base - 25, 3, 6, F('#a8a8b8'));                                       // chimney
+      roof(cx - 14, base - 22, 28, 14, F('#f8a048'), F('#d07828'));
       break;
     }
     case 'spellfactory': {
-      orect(cx - 15, base - 18, 30, 18, F('#8c8ca0'));             // stone hall
-      for (let i = 0; i < 3; i++) rect(cx - 15, base - 14 + i * 5, 30, 1, F('#6f6f85'));
-      ocirc(cx, base - 10, 4, F('#f070f8'));                       // glowing round window
-      tri(cx, base - 18, 17, 17, F('#7a4ad8'));                    // pointed roof
-      rect(cx - 16, base - 19, 32, 2, trim);
-      rect(cx - 1, base - 39, 2, 4, '#f8e070');                    // spire
-      orect(cx + 9, base - 6, 8, 6, F('#30303c'));                 // bubbling cauldron
-      circ(cx + 13, base - 8, 1, '#f070f8');
+      rr(cx - 18, base - 16, 36, 15, F('#ece4f8'));
+      rr(cx - 4, base - 11, 8, 10, '#a86838');
+      ocirc(cx - 11, base - 9, 3, '#f078c8'); ocirc(cx + 11, base - 9, 3, '#f078c8');
+      roof(cx - 21, base - 37, 42, 23, F('#9068e0'), F('#7050b8'));
+      rect(cx - 1, base - 44, 3, 7, '#f8d848'); rect(cx - 3, base - 42, 7, 3, '#f8d848');   // star on top
+      rect(cx - 20, base - 16, 40, 1, trim);
       break;
     }
   }
   if (b.cons) drawUpgradeBadge(cx, base, b);
 }
-// a wall section seen from the front: bricks and battlements; joins sideways with wall neighbours
+// walls: a wooden fence at level 1, then stone, dark stone and gold blocks. They join sideways with neighbours.
+const WALL_COLS = [['#d09858', '#a86838'], ['#d8d8e0', '#a8a8b8'], ['#9898b0', '#686880'], ['#f8d860', '#d0a020']];
 function drawWallBlock(cx, base, lvl, F, joinL, joinR) {
-  const cols = WALL_COLS[clamp(lvl - 1, 0, 3)];
-  const x0 = cx - (joinL ? 6 : 5), x1 = cx + (joinR ? 6 : 5), h = 12;
-  orect(x0, base - h, x1 - x0, h, F(cols[0]));
-  rect(x0, base - 8, x1 - x0, 1, F(cols[1])); rect(x0, base - 4, x1 - x0, 1, F(cols[1]));
-  rect(cx - 1, base - 12, 1, 4, F(cols[1])); rect(cx + 2, base - 8, 1, 4, F(cols[1])); rect(cx - 3, base - 4, 1, 4, F(cols[1]));
-  for (const bx of [cx - 5, cx - 1, cx + 3]) orect(bx, base - h - 3, 2, 2, F(cols[0]));   // battlements
+  const [c0, c1] = WALL_COLS[clamp(lvl - 1, 0, 3)];
+  const x0 = cx - (joinL ? 8 : 5), x1 = cx + (joinR ? 8 : 5);
+  if (lvl === 1) {
+    rr(x0, base - 10, x1 - x0, 3, F(c0)); rr(x0, base - 5, x1 - x0, 3, F(c0));   // rails
+    rr(cx - 2, base - 13, 4, 12, F(c1));                                            // post
+    rect(cx - 2, base - 13, 4, 1, F(c0));
+    return;
+  }
+  rr(x0, base - 12, x1 - x0, 11, F(c0));
+  rect(x0, base - 7, x1 - x0, 1, F(c1));
+  rect(cx - 1, base - 12, 1, 5, F(c1)); rect(cx + 3, base - 7, 1, 6, F(c1)); rect(cx - 4, base - 7, 1, 6, F(c1));
 }
 function drawRubble(cx, base, s) {
-  const half = Math.round((s * T) / 2) - 3, seed = Math.round(cx * 7 + base * 13);
+  const half = Math.round((s * T) / 2) - 4, seed = Math.round(cx * 7 + base * 13);
   for (let i = 0; i < 4 + s * 3; i++) {
     const ox = ((seed + i * 97) % 100) / 100 * 2 - 1, r = 1 + ((seed + i * 31) % 3);
-    ocirc(cx + ox * half, base - r - 1, r, i % 2 ? '#8f8fa3' : '#6a5a48');
+    ocirc(cx + ox * half, base - r - 1, r, i % 2 ? '#b8b8c8' : '#a89880');
   }
 }
 function drawScaffold(cx, base, s, b) {
-  const w = Math.round((s * T) / 2) - 3, h = Math.min(26, s * 7);
-  orect(cx - w, base - 6, w * 2, 6, '#d8c49a');                     // the start of the walls
-  for (const px of [-w, 0, w - 2]) rect(cx + px, base - h, 2, h, '#9c6233');
-  rect(cx - w, base - h, w * 2, 2, '#9c6233');
-  line(cx - w, base - 6, cx + w - 2, base - h, '#9c6233', 1);
+  const w = Math.round((s * T) / 2) - 4, h = Math.min(20, s * 6);
+  rr(cx - w, base - 5, w * 2, 5, '#e8d8b0');
+  for (const px of [-w, w - 3]) rr(cx + px, base - h, 3, h, '#c88850');
+  rr(cx - w, base - h, w * 2, 3, '#c88850');
+  rect(cx - 4, base - 9, 8, 4, '#f8d848');      // a little "under construction" sign
   drawUpgradeBadge(cx, base, b);
 }
 function drawUpgradeBadge(cx, base, b) {
   const label = b.cons.days + 'd';
   const y = base - artHeight(b) - 12;
   const w = textWidth(label) + 14;
-  rect(cx - w / 2 - 1, y - 1, w + 2, 10, INK);
-  rect(cx - w / 2, y, w, 8, '#f8c830');
-  rect(cx - w / 2 + 2, y + 2, 4, 2, '#5f5f75'); rect(cx - w / 2 + 3, y + 4, 1, 3, '#7a4a22');   // hammer
+  rr(cx - w / 2, y, w, 9, '#f8d848');
+  rect(cx - w / 2 + 2, y + 2, 4, 2, '#686880'); rect(cx - w / 2 + 3, y + 4, 1, 3, '#a86838');   // hammer
   ptext(label, cx - w / 2 + 9, y + 2, '#ffffff');
 }
 function drawHpBar(cx, y, w, frac) {
-  rect(cx - w / 2 - 1, y - 1, w + 2, 4, '#14101c');
-  rect(cx - w / 2, y, w, 2, '#5a1a14');
-  rect(cx - w / 2, y, Math.max(1, Math.round(w * frac)), 2, frac > 0.5 ? '#6fe03a' : frac > 0.25 ? '#f8c830' : '#f04a30');
+  rr(cx - w / 2, y, w, 3, '#784848');
+  rect(cx - w / 2, y, Math.max(1, Math.round(w * frac)), 3, frac > 0.5 ? '#68d048' : frac > 0.25 ? '#f8c838' : '#f05848');
 }
 
-// ---------- decorative trees and rocks on the outer ring ----------
+// ---------- trees and rocks on the outer ring ----------
 let decor = [];
 function makeDecor() {
   decor = [];
   let seed = 7;
   const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0; i < 70; i++) {
-    const side = Math.floor(r() * 4), t = -MARGIN + r() * (GRID + MARGIN * 2), d = -MARGIN + r() * (MARGIN - 1.2);
+  for (let i = 0; i < 90; i++) {
+    const side = Math.floor(r() * 4), t = -MARGIN + r() * (GRID + MARGIN * 2), d = -MARGIN + r() * (MARGIN - 1.5);
     let x, y;
     if (side === 0) { x = t; y = d; } else if (side === 1) { x = GRID - d; y = t; } else if (side === 2) { x = t; y = GRID - d; } else { x = d; y = t; }
-    decor.push({ x, y, kind: r() < 0.75 ? 'tree' : 'rock', v: r() });
+    decor.push({ x, y, kind: r() < 0.8 ? 'tree' : 'rock', v: r() });
   }
 }
 function drawDecor(d) {
-  const cx = sx(d.x, d.y), cy = sy(d.x, d.y);
-  if (cx < -20 || cx > W + 20 || cy < -20 || cy > H + 20) return;
+  const cx = sx(d.x), cy = sy(0, d.y);
+  if (cx < -24 || cx > W + 24 || cy < -10 || cy > H + 40) return;
   if (d.kind === 'tree') {
-    const big = d.v > 0.5 ? 1 : 0;
-    circ(cx, cy, 6 + big, '#2f7a1e');
-    circ(cx, cy, 4 + big, '#3f9a28');
+    // a round, puffy tree: outlines first, then the leaves, so the blobs merge into one shape
+    const big = d.v > 0.5 ? 1 : 0, r = 7 + big;
+    rr(cx - 2, cy - 4, 4, 6, '#a86838');
+    for (const [ox, oy, rad] of [[0, -12, r], [-5, -8, r - 2], [5, -8, r - 2]]) circ(cx + ox, cy + oy - big, rad + 1, INK);
+    for (const [ox, oy, rad] of [[0, -12, r], [-5, -8, r - 2], [5, -8, r - 2]]) circ(cx + ox, cy + oy - big, rad, '#58b048');
+    circ(cx - 3, cy - 15 - big, 2, '#80d068');
   } else {
-    circ(cx, cy, 4, '#5f5f75'); circ(cx, cy, 3, '#7c7c90');
+    ocirc(cx, cy - 3, 4, '#b8b8c8'); circ(cx - 1, cy - 4, 1, '#e0e0e8');
   }
 }
 
-// ---------- ground: drawn once, then blitted every frame (much cheaper on phones) ----------
+// ---------- ground: grass with little tufts and flowers, drawn once and blitted every frame ----------
 const GROUND_O = MARGIN * T;
 let groundCanvas = null;
 function buildGround() {
@@ -1176,19 +1218,46 @@ function buildGround() {
   c.width = N * T; c.height = N * T;
   const prev = g;
   g = c.getContext('2d');
+  const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) | 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
   for (let y = -MARGIN; y < GRID + MARGIN; y++) for (let x = -MARGIN; x < GRID + MARGIN; x++) {
     const inside = x >= 0 && y >= 0 && x < GRID && y < GRID;
-    const checker = (x + y) % 2 === 0;
-    rect((x + MARGIN) * T, (y + MARGIN) * T, T, T, inside ? (checker ? '#62b236' : '#5aa830') : (checker ? '#4a9228' : '#448a24'));
+    const px = (x + MARGIN) * T, py = (y + MARGIN) * T, v = hash(x, y);
+    rect(px, py, T, T, inside ? '#90d870' : '#70c058');
+    if (!inside) {
+      // tall grass outside the village
+      for (const [ox, oy] of [[2, 4], [9, 3], [5, 10], [12, 11]]) { rect(px + ox, py + oy, 1, 3, '#58a048'); rect(px + ox + 2, py + oy, 1, 3, '#58a048'); rect(px + ox + 1, py + oy + 1, 1, 2, '#58a048'); }
+    } else if (v < 0.22) {
+      const ox = 3 + Math.floor(hash(y, x) * 8), oy = 3 + Math.floor(v * 40);
+      rect(px + ox, py + oy, 1, 2, '#70b850'); rect(px + ox + 2, py + oy, 1, 2, '#70b850'); rect(px + ox + 1, py + oy + 1, 1, 1, '#70b850');
+    } else if (v > 0.965) {
+      const col = v > 0.983 ? '#f87878' : '#f8e060', ox = 4 + Math.floor(hash(y, x) * 7), oy = 4 + Math.floor((v - 0.965) * 300);
+      rect(px + ox, py + oy - 1, 1, 1, col); rect(px + ox - 1, py + oy, 3, 1, col); rect(px + ox, py + oy + 1, 1, 1, col); rect(px + ox, py + oy, 1, 1, '#ffffff');
+    }
   }
-  // border of the buildable area
-  g.fillStyle = '#3c7a20';
+  // soft edge around the village
+  g.fillStyle = '#78c058';
   g.fillRect(GROUND_O - 1, GROUND_O - 1, GRID * T + 2, 1);
   g.fillRect(GROUND_O - 1, GROUND_O + GRID * T, GRID * T + 2, 1);
   g.fillRect(GROUND_O - 1, GROUND_O - 1, 1, GRID * T + 2);
   g.fillRect(GROUND_O + GRID * T, GROUND_O - 1, 1, GRID * T + 2);
   g = prev;
   groundCanvas = c;
+}
+// beyond the map edge: a dense forest, tiled from a small pattern that scrolls with the camera
+let forestPattern = null;
+function drawForest() {
+  if (!forestPattern) {
+    const c = document.createElement('canvas'); c.width = 32; c.height = 32;
+    const prev = g; g = c.getContext('2d');
+    rect(0, 0, 32, 32, '#3c8a3c');
+    for (const [x, y] of [[8, 10], [24, 26], [24, 10], [8, 26]]) { circ(x, y, 9, '#2e6e34'); circ(x, y, 8, '#4a9a48'); circ(x - 3, y - 3, 2, '#68b858'); }
+    g = prev;
+    forestPattern = g.createPattern(c, 'repeat');
+  }
+  g.save();
+  g.translate(Math.round(W / 2 - cam.x) % 32 - 32, Math.round(H / 2 - cam.y) % 32 - 32);
+  g.fillStyle = forestPattern; g.fillRect(0, 0, W + 64, H + 64);
+  g.restore();
 }
 function drawGround() {
   if (!groundCanvas) buildGround();
@@ -1198,15 +1267,9 @@ function drawGround() {
 // ---------- the frame ----------
 function render(now) {
   const night = S.phase === 'raid' || S.phase === 'won' || S.phase === 'lost';
-  g.fillStyle = '#1d3b14';
-  g.fillRect(0, 0, W, H);
+  drawForest();
   drawGround();
   // flat ground layer: building pads, selection, placement squares
-  for (const b of S.buildings) {
-    if (placing && placing.moveId === b.id) continue;
-    const s = def(b).size, c = center(b);
-    sq(sx(c.x), sy(0, c.y), s, b.type === 'wall' ? '#4a9628' : '#4e9a2c');
-  }
   const sel = selectedId && byId(selectedId);
   if (sel && !placing) { const s = def(sel).size, c = center(sel); drawSelect(sx(c.x), sy(0, c.y), s); }
   for (const p of placingSpots()) {
@@ -1274,14 +1337,14 @@ function render(now) {
 function drawBuildingAt(b) {
   const s = def(b).size, c = center(b);
   const cx = sx(c.x), cy = sy(0, c.y);
-  if (cx < -40 || cx > W + 40 || cy < -20 || cy > H + 70) return;
+  if (cx < -50 || cx > W + 50 || cy < -30 || cy > H + 80) return;
   if (b.type === 'wall' && !b.destroyed && b.lvl >= 1) {
     const nbr = (dx) => {
       if (!inField(b.x + dx, b.y)) return false;
       const id = blocked[cellIndex(b.x + dx, b.y)]; const o = id && byId(id);
       return o && o.type === 'wall' && !o.destroyed && o.lvl >= 1;
     };
-    drawWallBlock(cx, Math.round(cy + T / 2), b.lvl, (col) => (b.flash > 0 ? '#ffffff' : col), nbr(-1), nbr(1));
+    drawWallBlock(cx, Math.round(cy + T / 2) - 2, b.lvl, (col) => (b.flash > 0 ? '#ffffff' : col), nbr(-1), nbr(1));
     return;
   }
   drawBuilding(b, cx, cy, { noPad: true });
@@ -1370,8 +1433,15 @@ function resize() {
 }
 function autoScale() {
   const vw = window.innerWidth, vh = window.innerHeight;
-  return clamp(Math.round(Math.min(vw / 420, vh / 300)), 2, 5);
+  return nearestZoom(Math.min(vw / 480, vh / 360));
 }
+// the furthest zoom still keeps the map filling a good part of the screen (phones can go further out than desktops)
+function zoomLevels() {
+  const minZ = (0.6 * Math.min(window.innerWidth, window.innerHeight)) / (N * T);
+  const ok = ZOOMS.filter((z) => z >= minZ);
+  return ok.length ? ok : [ZOOMS[ZOOMS.length - 1]];
+}
+function nearestZoom(z) { return zoomLevels().reduce((a, b) => (Math.abs(Math.log(b / z)) < Math.abs(Math.log(a / z)) ? b : a)); }
 function screenToTile(clientX, clientY) {
   return { x: (clientX / scale - W / 2 + cam.x) / T, y: (clientY / scale - H / 2 + cam.y) / T };
 }
@@ -1383,8 +1453,11 @@ function buildingAt(tx, ty) {
   return null;
 }
 function clampCam() {
-  cam.x = clamp(cam.x, -MARGIN * T, (GRID + MARGIN) * T);
-  cam.y = clamp(cam.y, -MARGIN * T, (GRID + MARGIN) * T);
+  // keep the village on screen; when zoomed far out, the whole map just sits in the middle
+  const mid = (GRID * T) / 2;
+  const slackX = Math.max(0, (N * T - W) / 2 + T), slackY = Math.max(0, (N * T - H) / 2 + T * 2);
+  cam.x = clamp(cam.x, mid - slackX, mid + slackX);
+  cam.y = clamp(cam.y, mid - slackY, mid + slackY);
 }
 function centerOn(x, y) { cam.x = x * T; cam.y = y * T; clampCam(); }
 
@@ -1417,7 +1490,7 @@ canvas.addEventListener('pointermove', (e) => {
   if (pinch && pointers.size === 2) {
     const [p1, p2] = [...pointers.values()];
     const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-    const want = clamp(Math.round(pinch.scale * d / pinch.d), 2, 6);
+    const want = nearestZoom(pinch.scale * d / pinch.d);
     if (want !== scale) setScale(want);
     return;
   }
@@ -1467,7 +1540,7 @@ const endPointer = (e) => {
 canvas.addEventListener('pointerleave', () => { hover = null; });
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); setScale(clamp(scale + (e.deltaY < 0 ? 1 : -1), 2, 6)); }, { passive: false });
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1 : -1); }, { passive: false });
 window.addEventListener('resize', () => { resize(); });
 if (window.visualViewport) window.visualViewport.addEventListener('resize', () => resize());
 window.addEventListener('orientationchange', () => setTimeout(resize, 150));
@@ -1483,13 +1556,8 @@ window.addEventListener('keydown', (e) => {
   if ((e.key === '-' || e.key === '_') && $('modal').hidden) zoomBy(-1);
   if (S && S.phase === 'raid' && !e.repeat && $('modal').hidden) { const k = ['1', '2', '3'].indexOf(e.key); if (k >= 0) armSpell(Object.keys(SPELLS)[k]); }
 });
-function setScale(s) { scale = s; resize(); updateZoomBtns(); }
-function zoomBy(d) { setScale(clamp(scale + d, 2, 6)); }
-function updateZoomBtns() {
-  const a = $('zoomIn'), b = $('zoomOut');
-  if (a) a.disabled = scale >= 6;
-  if (b) b.disabled = scale <= 2;
-}
+function setScale(s) { scale = s; resize(); clampCam(); }
+function zoomBy(d) { const z = zoomLevels(); setScale(z[clamp(z.indexOf(nearestZoom(scale)) + d, 0, z.length - 1)]); }
 
 /* =====================================================================
    UI
@@ -1710,8 +1778,9 @@ function renderSel(force) {
   const chips = [];
   if (t.dmg) chips.push(`Damage <b>${t.dmg[shownLvl - 1]}</b>`, `Range <b>${t.range}</b>`, `<b>${t.air && t.ground ? 'Ground + air' : t.air ? 'Air only' : 'Ground only'}</b>`);
   if (t.prod) chips.push(`Makes <b>${fmt(t.prod[shownLvl - 1])}</b>/night`);
-  if (t.store) chips.push(`Holds <b>${fmt(t.store[shownLvl - 1])}</b>`);
-  if (t.cap) chips.push(`Holds <b>${fmt(t.cap[shownLvl - 1])}</b> each`);
+  if (t.store && lvl >= 1) chips.push(`<span data-ico="${t.res}" data-px="14"></span><b data-stored="${t.res}"></b> / ${fmt(t.store[lvl - 1])}`);
+  if (t.cap) chips.push(`<span data-ico="gold" data-px="14"></span><b data-stored="gold"></b> / ${fmt(t.cap[shownLvl - 1])}`, `<span data-ico="elixir" data-px="14"></span><b data-stored="elixir"></b> / ${fmt(t.cap[shownLvl - 1])}`);
+  if (t.cap) chips.push('Fills first');
   if (t.slots) chips.push(`Spells <b>${spellsStored()}/${spellSlots() || t.slots[0]}</b>`);
   let status = '';
   if (b.cons) status = lvl < 1 ? `Being built: ready in ${daysLabel(b.cons.days)}.` : `Upgrading to level ${b.cons.to}: ready in ${daysLabel(b.cons.days)}. It won't work until then.`;
@@ -1724,7 +1793,7 @@ function renderSel(force) {
     if (t.dmg) bits.push(`Damage ${t.dmg[next - 1]}`);
     if (t.prod) bits.push(`Makes ${fmt(t.prod[next - 1])}`);
     if (t.store) bits.push(`Holds ${fmt(t.store[next - 1])}`);
-    if (t.cap) bits.push(`Holds ${fmt(t.cap[next - 1])}`);
+    if (t.cap) bits.push(`Holds ${fmt(t.cap[next - 1])} each`);
     if (t.slots) bits.push(`${t.slots[next - 1]} spells`);
     nextInfo = `<div class="next-lvl">Next level: ${bits.join(' · ')}</div>`;
   }
@@ -1776,6 +1845,7 @@ function renderSel(force) {
   const sl = $('sellBtn'); if (sl) sl.onclick = () => { S.buildings = S.buildings.filter((o) => o !== b); rebuildBlocked(); deselect(); save(); refreshUI(); sfx('click'); };
 }
 function updateSelLive(b) {
+  $('sel').querySelectorAll('[data-stored]').forEach((el) => { el.textContent = fmt(storedIn(b, el.dataset.stored)); });
   const hp = b.destroyed ? 0 : b.hp;
   const h = $('selHp'); if (h) h.textContent = `${fmt(hp)}/${fmt(maxHp(b))}`;
   const bar = $('selBar'); if (bar) bar.style.width = (hp / maxHp(b)) * 100 + '%';
@@ -1947,13 +2017,13 @@ function openShop() {
 }
 function previewCanvas(type, height) {
   const c = document.createElement('canvas');
-  c.width = 64; c.height = height || 58;
+  c.width = 72; c.height = height || 60;
   const prev = g; g = c.getContext('2d'); g.imageSmoothingEnabled = false;
   const s = TYPES[type].size;   // side view: the building stands on a strip of ground near the bottom
-  rect(0, c.height - 5, c.width, 5, '#5aa830');
-  drawBuilding({ type, lvl: 1, x: 0, y: 0, angle: 0.5, cons: null, hp: 1 }, 32, Math.round(c.height - 5 - (s * T) / 2), { noPad: true });
+  rect(0, c.height - 5, c.width, 5, '#90d870');
+  drawBuilding({ type, lvl: 1, x: 0, y: 0, angle: 0.5, cons: null, hp: 1 }, 36, Math.round(c.height - 3 - (s * T) / 2), { noPad: true });
   g = prev;
-  c.style.width = '128px'; c.style.height = '116px';
+  c.style.width = '144px'; c.style.height = '120px';
   return c;
 }
 function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; }
@@ -2011,9 +2081,6 @@ buildSpellBar();
 $('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
 $('repairAllBtn').onclick = () => { unlockAudio(); repairAll(); };
 $('defendBtn').onclick = () => { unlockAudio(); startRaid(); };
-$('zoomIn').onclick = () => zoomBy(1);
-$('zoomOut').onclick = () => zoomBy(-1);
-updateZoomBtns();
 $('speedBtn').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; refreshUI(); };
 document.querySelectorAll('canvas[data-icon]').forEach((c) => drawIcon(c, c.dataset.icon));
 
