@@ -29,12 +29,15 @@ screen and works offline.
   Freeze by day, and cast them at night (tap a spell, then tap the map; keys
   1–3 also work).
 - Zoom with the mouse wheel, a pinch, or the + / − keys.
+- **Themes:** tap Theme in the top left to switch between Toy, Emoji,
+  Blueprint, Neon and Pixel. The choice is remembered on this device.
+- **Walls:** tap Walls in the bottom right to pick up every wall and lay them
+  out again. Walls you leave unplaced are stored and free to place later.
 - The Town Hall stores gold and elixir first; anything over its limit is split
   evenly across your storages. Tap a building to see how much it holds.
 - The moment your Town Hall falls, the game is over. The village saves itself
   every day.
-- Cute, simple pixel art in the style of a handheld RPG: a top-down map with
-  little houses and chibi raiders. Tap the version number in the top left to read the patch notes.
+- Simple top-down art in several themes; the Pixel theme is the old look. Tap the version number in the top left to read the patch notes.
 
 ## Files
 
@@ -44,7 +47,7 @@ style.css              interface styles
 game.js                the whole game: simulation, pixel renderer, UI, sound
 manifest.webmanifest   home-screen install info
 sw.js                  offline cache (bump VERSION when files change)
-fonts/                 Pixelify Sans (SIL Open Font License)
+fonts/                 Fredoka, Chakra Petch, Pixelify Sans (SIL Open Font License)
 icons/                 app icons
 ```
 

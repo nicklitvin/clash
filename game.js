@@ -88,8 +88,16 @@ const UNITS = {
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '0.5.0';
+const GAME_VERSION = '0.6.0';
 const PATCH_NOTES = [
+  { v: '0.6.0', date: 'Nov 10, 2026', notes: [
+    'New: themes! Tap Theme in the top left to switch between Toy, Emoji, Blueprint, Neon and the old Pixel look.',
+    'Toy (the new default): soft flat shapes and round little critters with googly eyes.',
+    'Emoji: every building and raider is an emoji. Blueprint: white line drawings on grid paper. Neon: glowing outlines in the dark.',
+    'Easier-to-read text: new clean fonts and no more heavy outlines. Fixed letters like "fi" turning into odd shapes.',
+    'New: Rearrange walls. Tap the Walls button (or Rearrange in a wall\'s panel) to pick up every wall and lay them out again.',
+    'Walls you do not place are stored, and you can put them down later from the shop for free.',
+  ] },
   { v: '0.5.0', date: 'Nov 6, 2026', notes: [
     'A cuter look: bigger tiles, soft colours, grass with flowers, puffy trees and a forest around the map.',
     'Buildings redrawn as little houses with big roofs, and raiders are now cute chibi characters.',
@@ -164,7 +172,7 @@ let blocked = new Int32Array(N * N);   // 0 free, building id otherwise
 let spellArmed = null, hover = null, spellCd = { lightning: 0, freeze: 0, heal: 0 };
 
 function newGame() {
-  S = { day: 1, phase: 'build', gold: 1000, elixir: 1000, nextId: 1, buildings: [], over: false, spells: { lightning: 0, heal: 0, freeze: 0 } };
+  S = { day: 1, phase: 'build', gold: 1000, elixir: 1000, nextId: 1, buildings: [], over: false, spells: { lightning: 0, heal: 0, freeze: 0 }, wallStash: [] };
   add('townhall', 13, 13, 1);
   add('cannon', 9, 14, 1);
   add('archer', 18, 11, 1);
@@ -235,6 +243,7 @@ function canAfford(p) { return S.gold >= p[0] && S.elixir >= p[1]; }
 
 function save() {
   if (!S) return;
+  if (placing && placing.rearrange) return;   // walls are lifted off the map while rearranging; never save that state
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ }
 }
 function load() {
@@ -245,6 +254,7 @@ function load() {
     if (!s || !Array.isArray(s.buildings) || s.over) return false;
     s.phase = 'build';   // saves are only made while building (older saves called it 'night')
     s.spells = Object.assign({ lightning: 0, heal: 0, freeze: 0 }, s.spells || {});
+    s.wallStash = Array.isArray(s.wallStash) ? s.wallStash : [];   // walls picked up but not placed yet
     S = s;
     return true;
   } catch (e) { return false; }
@@ -934,21 +944,37 @@ function spriteCanvas(name, flip, tint) {
   return c;
 }
 
-// --- raster primitives (integer, no anti-aliasing) ---
-function rect(x, y, w, h, c) { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+// --- drawing primitives ---
+// The pixel theme draws on a low-res canvas with integer rectangles (crisp 8-bit look).
+// Smooth themes draw on a full-resolution canvas with real arcs and lines; the same calls work in both.
+let SMOOTH = false;
+function rect(x, y, w, h, c) {
+  g.fillStyle = c;
+  if (SMOOTH) g.fillRect(x, y, w, h);
+  else g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+}
 function sq(cx, cy, n, col) {            // flat square, n tiles across, centred on (cx, cy)
-  const w = Math.round(n * T);
-  rect(Math.round(cx - w / 2), Math.round(cy - w / 2), w, w, col);
+  const w = n * T;
+  rect(cx - w / 2, cy - w / 2, w, w, col);
 }
 function circ(cx, cy, r, col) {
-  cx = Math.round(cx); cy = Math.round(cy); g.fillStyle = col;
+  g.fillStyle = col;
+  if (SMOOTH) { g.beginPath(); g.arc(cx, cy, Math.max(0, r), 0, Math.PI * 2); g.fill(); return; }
+  cx = Math.round(cx); cy = Math.round(cy);
   for (let dy = -r; dy <= r; dy++) { const w = Math.floor(Math.sqrt(r * r - dy * dy) + 0.35); g.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
 }
 function oval(cx, cy, rx, ry, col) {
-  cx = Math.round(cx); cy = Math.round(cy); g.fillStyle = col;
+  g.fillStyle = col;
+  if (SMOOTH) { g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill(); return; }
+  cx = Math.round(cx); cy = Math.round(cy);
   for (let dy = -ry; dy <= ry; dy++) { const w = Math.floor(rx * Math.sqrt(1 - (dy * dy) / (ry * ry)) + 0.35); g.fillRect(cx - w, cy + dy, w * 2 + 1, 1); }
 }
 function ring(cx, cy, rx, ry, col, dash) {
+  if (SMOOTH) {
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    g.strokeStyle = col; g.lineWidth = 1; g.setLineDash(dash ? [3, 3] : []); g.stroke(); g.setLineDash([]);
+    return;
+  }
   g.fillStyle = col;
   const steps = Math.max(24, Math.round(rx * 3));
   for (let i = 0; i < steps; i++) {
@@ -958,7 +984,13 @@ function ring(cx, cy, rx, ry, col, dash) {
   }
 }
 function line(x0, y0, x1, y1, col, t) {
-  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1); t = t || 1;
+  t = t || 1;
+  if (SMOOTH) {
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1);
+    g.strokeStyle = col; g.lineWidth = t; g.lineCap = 'round'; g.stroke();
+    return;
+  }
+  x0 = Math.round(x0); y0 = Math.round(y0); x1 = Math.round(x1); y1 = Math.round(y1);
   g.fillStyle = col;
   const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
   let err = dx + dy, x = x0, y = y0, guard = 400;
@@ -970,6 +1002,32 @@ function line(x0, y0, x1, y1, col, t) {
     if (e2 >= dy) { err += dy; x += sx; }
     if (e2 <= dx) { err += dx; y += sy; }
   }
+}
+// smooth-only helpers
+function rrect(x, y, w, h, r, fill, stroke, lw) {
+  g.beginPath(); g.roundRect(x, y, w, h, r);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); }
+}
+function disc(cx, cy, r, fill, stroke, lw) {
+  g.beginPath(); g.arc(cx, cy, Math.max(0, r), 0, Math.PI * 2);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); }
+}
+function poly(pts, fill, stroke, lw, open) {
+  g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  if (!open) g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.lineJoin = 'round'; g.stroke(); }
+}
+// text drawn in the world (floating numbers, badges): pixel font in the pixel theme, a real font otherwise
+function worldText(str, cx, y, col, size) {
+  if (!SMOOTH) { ptext(str, Math.round(cx - textWidth(str) / 2), y, col); return; }
+  g.font = `700 ${size || 8}px ${THEME.canvasFont}`;
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  g.lineJoin = 'round'; g.lineWidth = 2.2; g.strokeStyle = THEME.textOutline || 'rgba(30,30,50,0.85)';
+  g.strokeText(str, cx, y - 1); g.fillStyle = col; g.fillText(str, cx, y - 1);
 }
 // 3x5 pixel font for numbers drawn in the world
 const FONT = {
@@ -993,13 +1051,14 @@ function ptext(str, x, y, col) {
 const textWidth = (s) => s.length * 4 - 1;
 
 // world (tile) → screen (low-res pixel). Straight top-down: no projection.
-const sx = (x) => Math.round(x * T - cam.x + W / 2);
-const sy = (x, y) => Math.round(y * T - cam.y + H / 2);
+const sx = (x) => (SMOOTH ? x * T - cam.x + W / 2 : Math.round(x * T - cam.x + W / 2));
+const sy = (x, y) => (SMOOTH ? y * T - cam.y + H / 2 : Math.round(y * T - cam.y + H / 2));
 
 // ---------- building art: cute top-down RPG style (a front wall with a big roof, soft colours, rounded outlines) ----------
 const LEVEL_TRIM = ['#c8c8d8', '#f0b860', '#78c8f8', '#f8d848', '#f890e8'];
 const INK = '#383848';
 function rr(x, y, w, h, fill) {            // rounded, outlined rectangle (corner pixels left off the outline)
+  if (SMOOTH) { rrect(x, y, w, h, Math.min(2.5, h / 2), fill, THEME.ink || INK, 1); return; }
   x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
   rect(x - 1, y, w + 2, h, INK);
   rect(x, y - 1, w, h + 2, INK);
@@ -1175,7 +1234,8 @@ function drawUpgradeBadge(cx, base, b) {
   const w = textWidth(label) + 14;
   rr(cx - w / 2, y, w, 9, '#f8d848');
   rect(cx - w / 2 + 2, y + 2, 4, 2, '#686880'); rect(cx - w / 2 + 3, y + 4, 1, 3, '#a86838');   // hammer
-  ptext(label, cx - w / 2 + 9, y + 2, '#ffffff');
+  if (SMOOTH) { g.font = `700 7px ${THEME.canvasFont}`; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillStyle = '#4a3a10'; g.fillText(label, cx - w / 2 + 8, y + 4.8); }
+  else ptext(label, cx - w / 2 + 9, y + 2, '#ffffff');
 }
 function drawHpBar(cx, y, w, frac) {
   rr(cx - w / 2, y, w, 3, '#784848');
@@ -1264,11 +1324,366 @@ function drawGround() {
   g.drawImage(groundCanvas, Math.round(W / 2 - cam.x) - GROUND_O, Math.round(H / 2 - cam.y) - GROUND_O);
 }
 
+/* =====================================================================
+   THEMES: each one draws the ground, buildings, troops and trees its own way.
+   "pixel" is the low-res 8-bit look; the others are smooth, simple vector styles.
+   ===================================================================== */
+const TAU = Math.PI * 2;
+const lerpHex = mixHex;
+const CAT_OF = (type) => (type === 'townhall' ? 'th' : type === 'wall' ? 'wall' : type === 'builder' ? 'builder' : TYPES[type].cat);
+// little dots along the bottom of a building show its level (smooth themes)
+function levelPips(cx, bottom, lvl, col) {
+  const n = Math.max(1, lvl), gap = 3.2, x0 = cx - ((n - 1) * gap) / 2;
+  for (let i = 0; i < n; i++) disc(x0 + i * gap, bottom, 1.1, col);
+}
+// rotate drawing around (cx, cy)
+function turned(cx, cy, a, fn) { g.save(); g.translate(cx, cy); g.rotate(a); fn(); g.restore(); }
+
+// ---------- TOY: soft flat shapes, round little critters ----------
+const TOY = {
+  pads: { th: '#ffe08a', defense: '#dfe6ee', resource: '#f3e6c8', special: '#e6dcfa', wall: '#d9b38c', builder: '#ffe0c2' },
+  wall: ['#d9a877', '#c7ccd8', '#8f97ad', '#ffd060'],
+  troop: { barbarian: '#f6c445', archer: '#ef7bb4', goblin: '#6cc24a', giant: '#f08a4b', breaker: '#5a6072', dragon: '#e5484d' },
+  size: { barbarian: 4.2, archer: 3.9, goblin: 3.6, giant: 6.8, breaker: 4, dragon: 7.4 },
+};
+function toyBuilding(b, cx, cy, opts) {
+  const t = def(b), s = t.size, half = (s * T) / 2 - 1.5, lvl = Math.max(1, b.lvl);
+  const F = (c) => (b.flash > 0 ? '#ffffff' : c);
+  const edge = 'rgba(40,40,70,0.22)';
+  if (b.type === 'wall') {
+    const col = F(TOY.wall[clamp(lvl - 1, 0, 3)]), j = (opts && opts.join) || {}, w = 5;
+    if (b.destroyed) { disc(cx, cy, 3, '#c9c3ba'); return; }
+    if (j.r) rect(cx, cy - w / 2, T / 2 + 0.5, w, col);
+    if (j.l) rect(cx - T / 2 - 0.5, cy - w / 2, T / 2 + 0.5, w, col);
+    if (j.d) rect(cx - w / 2, cy, w, T / 2 + 0.5, col);
+    if (j.u) rect(cx - w / 2, cy - T / 2 - 0.5, w, T / 2 + 0.5, col);
+    rrect(cx - 4.5, cy - 4.5, 9, 9, 3, col, edge, 1);
+    return;
+  }
+  const cat = CAT_OF(b.type);
+  if (b.destroyed) {
+    rrect(cx - half, cy - half, half * 2, half * 2, 6, '#d8d2c8', edge, 1);
+    for (let i = 0; i < 5; i++) disc(cx + Math.cos(i * 2.4) * half * 0.5, cy + Math.sin(i * 2.4) * half * 0.5, 2 + (i % 2), '#b8b0a4');
+    return;
+  }
+  if (b.lvl < 1) {
+    rrect(cx - half, cy - half, half * 2, half * 2, 6, '#fbefd0', edge, 1);
+    g.save(); g.beginPath(); g.roundRect(cx - half, cy - half, half * 2, half * 2, 6); g.clip();
+    for (let i = -half * 2; i < half * 2; i += 7) line(cx + i, cy + half, cx + i + half * 2, cy - half, '#f2c94c', 2.5);
+    g.restore();
+    return;
+  }
+  rrect(cx - half, cy - half, half * 2, half * 2, 6, F(TOY.pads[cat] || '#eee'), edge, 1);
+  const trim = LEVEL_TRIM[clamp(lvl - 1, 0, 4)];
+  switch (b.type) {
+    case 'townhall': {
+      const roofs = ['#ff7a6b', '#5b9cf5', '#5cc46a', '#a77ae8', '#f5b93c'];
+      rrect(cx - half + 6, cy - half + 6, half * 2 - 12, half * 2 - 12, 8, F(roofs[lvl - 1]));
+      poly([[cx - 9, cy + 4], [cx - 9, cy - 5], [cx - 4.5, cy - 1], [cx, cy - 7], [cx + 4.5, cy - 1], [cx + 9, cy - 5], [cx + 9, cy + 4]], '#ffffff');   // crown
+      break;
+    }
+    case 'cannon': {
+      disc(cx, cy, 8, F('#c4ccd8'));
+      turned(cx, cy, b.angle, () => rrect(-1, -3, 13 - (b.recoil ? 2 : 0), 6, 3, F('#4a5568')));
+      disc(cx, cy, 5.5, F('#5b6b82'));
+      break;
+    }
+    case 'archer': {
+      disc(cx, cy, 9, F('#d9a877'));
+      disc(cx, cy, 5, F('#7bc96f'));
+      turned(cx, cy, b.angle, () => poly([[9, 0], [3, -3.5], [3, 3.5]], '#ffffff'));
+      break;
+    }
+    case 'mortar': {
+      disc(cx, cy, 10, F('#5b6b82')); disc(cx, cy, 5.5 + (b.recoil ? 1 : 0), '#2d3540');
+      break;
+    }
+    case 'airdef': {
+      disc(cx, cy, 9, F('#5a8de0'));
+      turned(cx, cy, b.angle, () => { for (const a of [0, 2.1, 4.2]) disc(Math.cos(a) * 4.5, Math.sin(a) * 4.5, 2.4, '#ffffff'); });
+      break;
+    }
+    case 'goldmine': {
+      disc(cx, cy, 9, F('#ffcf4d')); disc(cx, cy, 6, F('#ffe08a')); disc(cx, cy, 2.5, F('#e8a820'));
+      break;
+    }
+    case 'elixir': {
+      poly([[cx, cy - 11], [cx + 7, cy], [cx - 7, cy]], F('#d26ad8')); disc(cx, cy + 2, 7, F('#d26ad8'));
+      disc(cx - 2.5, cy, 2, '#f6c6f8');
+      break;
+    }
+    case 'goldstore':
+    case 'elixstore': {
+      const k = storedFrac(b), col = b.type === 'goldstore' ? '#f2b33d' : '#d26ad8';
+      rrect(cx - 12, cy - 11, 24, 22, 5, '#ffffff');
+      g.save(); g.beginPath(); g.roundRect(cx - 12, cy - 11, 24, 22, 5); g.clip();
+      rect(cx - 12, cy + 11 - 22 * k, 24, 22 * k, F(col)); g.restore();
+      rrect(cx - 12, cy - 11, 24, 22, 5, null, 'rgba(40,40,70,0.3)', 1.2);
+      break;
+    }
+    case 'builder': {
+      rrect(cx - 9, cy - 8, 18, 16, 4, F('#ff9f5a')); rect(cx - 9, cy - 1, 18, 2, '#e07b35');
+      break;
+    }
+    case 'spellfactory': {
+      const pts = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? 4.5 : 11, a = -Math.PI / 2 + (i * Math.PI) / 5; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+      poly(pts, F('#9b6be8'));
+      break;
+    }
+  }
+  levelPips(cx, cy + half - 3.5, lvl, trim === '#c8c8d8' ? '#a0a8b8' : trim);
+}
+function toyUnit(u, cx, cy, now) {
+  const r = TOY.size[u.type] || 3, flash = u.flash > 0, ice = u.frozen > 0;
+  let col = TOY.troop[u.type] || '#888';
+  if (ice) col = lerpHex(col, '#a8e0ff', 0.65);
+  if (flash) col = '#ffffff';
+  const bob = u.frozen > 0 ? 0 : Math.sin(now / 120 + u.walk) * 0.6, y = cy - bob - (u.d.air ? 4 : 0);
+  if (u.d.air) {
+    disc(cx, cy + 2, r * 0.8, 'rgba(0,0,0,0.12)');
+    poly([[cx - r * 0.3, y - 1], [cx - r * 1.9, y - r * 1.1 + Math.sin(now / 90) * 1.5], [cx - r * 0.9, y + 2]], lerpHex(col, '#000000', 0.15));
+    poly([[cx + r * 0.3, y - 1], [cx + r * 1.9, y - r * 1.1 + Math.sin(now / 90) * 1.5], [cx + r * 0.9, y + 2]], lerpHex(col, '#000000', 0.15));
+  }
+  disc(cx, y, r, col, 'rgba(40,40,70,0.35)', 0.8);
+  if (u.type === 'breaker') line(cx + r * 0.5, y - r * 0.8, cx + r * 1.1, y - r * 1.5, '#f2c94c', 1);
+  if (u.type === 'goblin') { poly([[cx - r, y - 1], [cx - r * 1.7, y - r * 0.9], [cx - r * 0.6, y - r * 0.6]], col); poly([[cx + r, y - 1], [cx + r * 1.7, y - r * 0.9], [cx + r * 0.6, y - r * 0.6]], col); }
+  const ex = u.dir * r * 0.32, er = Math.max(0.9, r * 0.24);
+  for (const o of [-1, 1]) { disc(cx + ex + o * r * 0.32, y - r * 0.15, er, '#ffffff'); disc(cx + ex + o * r * 0.32 + u.dir * er * 0.35, y - r * 0.15, er * 0.55, '#2b2b3a'); }
+}
+function toyDecor(d, cx, cy) {
+  if (d.kind === 'tree') { disc(cx, cy, 6 + d.v * 2, '#5fb86a'); disc(cx - 2, cy - 2, 3.5 + d.v, '#7ccd84'); }
+  else disc(cx, cy, 3.5, '#c4c9d4');
+}
+function toyGround() {
+  rect(0, 0, W, H, '#8fd18d');
+  const x0 = sx(0), y0 = sy(0, 0), sz = GRID * T;
+  rrect(x0 - 2, y0 - 2, sz + 4, sz + 4, 10, '#b9e9a7');
+  g.fillStyle = 'rgba(60,120,60,0.07)';
+  for (let i = 1; i < GRID; i++) { g.fillRect(x0 + i * T, y0, 0.5, sz); g.fillRect(x0, y0 + i * T, sz, 0.5); }
+}
+
+// ---------- LINE ART (shared by Blueprint and Neon): every building is a simple outlined symbol ----------
+function lineBuilding(b, cx, cy, opts, P) {
+  const t = def(b), s = t.size, half = (s * T) / 2 - 2.5, lvl = Math.max(1, b.lvl);
+  const cat = CAT_OF(b.type);
+  let col = P.cat[cat] || P.line;
+  if (b.flash > 0) col = P.flash;
+  g.save();
+  if (P.glow) { g.shadowColor = col; g.shadowBlur = P.glow; }
+  const st = (fn) => { g.strokeStyle = col; g.lineWidth = P.lw; g.lineJoin = 'round'; g.lineCap = 'round'; fn(); };
+  if (b.type === 'wall') {
+    const j = (opts && opts.join) || {};
+    if (b.destroyed) { st(() => { line(cx - 2, cy - 2, cx + 2, cy + 2, P.dim, 1); line(cx + 2, cy - 2, cx - 2, cy + 2, P.dim, 1); }); g.restore(); return; }
+    const lw = 1 + lvl * 0.5;
+    if (j.r) line(cx, cy, cx + T / 2, cy, col, lw);
+    if (j.l) line(cx, cy, cx - T / 2, cy, col, lw);
+    if (j.d) line(cx, cy, cx, cy + T / 2, col, lw);
+    if (j.u) line(cx, cy, cx, cy - T / 2, col, lw);
+    rrect(cx - 2.5, cy - 2.5, 5, 5, 1, P.bg, col, P.lw);
+    g.restore(); return;
+  }
+  if (b.destroyed) {
+    g.setLineDash([3, 3]); rrect(cx - half, cy - half, half * 2, half * 2, 3, null, P.dim, 1); g.setLineDash([]);
+    line(cx - half * 0.6, cy - half * 0.6, cx + half * 0.6, cy + half * 0.6, P.dim, 1);
+    line(cx + half * 0.6, cy - half * 0.6, cx - half * 0.6, cy + half * 0.6, P.dim, 1);
+    g.restore(); return;
+  }
+  if (b.lvl < 1) {
+    g.setLineDash([2, 3]); rrect(cx - half, cy - half, half * 2, half * 2, 3, null, col, 1); g.setLineDash([]);
+    line(cx - half, cy + half, cx + half, cy - half, col, 0.8);
+    g.restore(); return;
+  }
+  rrect(cx - half, cy - half, half * 2, half * 2, 3, P.fill, col, P.lw * 0.8);
+  st(() => {
+    switch (b.type) {
+      case 'townhall':
+        poly([[cx, cy - 13], [cx + 13, cy], [cx, cy + 13], [cx - 13, cy]], null, col, P.lw);
+        poly([[cx - 6, cy + 3], [cx - 6, cy - 3], [cx - 3, cy], [cx, cy - 5], [cx + 3, cy], [cx + 6, cy - 3], [cx + 6, cy + 3]], null, col, P.lw * 0.8);
+        break;
+      case 'cannon':
+        disc(cx, cy, 6, null, col, P.lw);
+        turned(cx, cy, b.angle, () => line(4, 0, 13 - (b.recoil ? 2 : 0), 0, col, 3));
+        break;
+      case 'archer':
+        disc(cx, cy, 6, null, col, P.lw);
+        turned(cx, cy, b.angle, () => poly([[4, -4], [10, 0], [4, 4]], null, col, P.lw, true));
+        break;
+      case 'mortar': disc(cx, cy, 9, null, col, P.lw); disc(cx, cy, 4 + (b.recoil ? 1 : 0), null, col, P.lw); break;
+      case 'airdef':
+        turned(cx, cy, b.angle, () => poly([[11, 0], [-7, -8], [-3, 0], [-7, 8]], null, col, P.lw));
+        break;
+      case 'goldmine': {
+        const hex = (r) => Array.from({ length: 6 }, (_, i) => [cx + Math.cos((i * Math.PI) / 3) * r, cy + Math.sin((i * Math.PI) / 3) * r]);
+        poly(hex(10), null, col, P.lw); poly(hex(4.5), null, col, P.lw);
+        break;
+      }
+      case 'elixir':
+        g.beginPath(); g.moveTo(cx, cy - 11); g.quadraticCurveTo(cx + 9, cy + 1, cx, cy + 9); g.quadraticCurveTo(cx - 9, cy + 1, cx, cy - 11); g.stroke();
+        break;
+      case 'goldstore':
+      case 'elixstore': {
+        const k = storedFrac(b);
+        rrect(cx - 10, cy - 10, 20, 20, 2, null, col, P.lw);
+        for (let y = cy + 8; y > cy + 10 - 20 * k; y -= 3) line(cx - 8, y, cx + 8, y, col, 0.8);
+        break;
+      }
+      case 'builder': poly([[cx - 8, cy + 7], [cx - 8, cy - 2], [cx, cy - 9], [cx + 8, cy - 2], [cx + 8, cy + 7]], null, col, P.lw); break;
+      case 'spellfactory': {
+        const pts = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? 4.5 : 11, a = -Math.PI / 2 + (i * Math.PI) / 5; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+        poly(pts, null, col, P.lw);
+        break;
+      }
+    }
+  });
+  g.shadowBlur = 0;
+  levelPips(cx, cy + half - 2.5, lvl, col);
+  g.restore();
+}
+function lineUnit(u, cx, cy, now, P) {
+  let col = P.enemy;
+  if (u.frozen > 0) col = '#a8e0ff';
+  if (u.flash > 0) col = '#ffffff';
+  const r = TOY.size[u.type] || 3;
+  g.save();
+  if (P.glow) { g.shadowColor = col; g.shadowBlur = P.glow; }
+  const a = u.dir > 0 ? 0 : Math.PI;
+  turned(cx, cy - (u.d.air ? 3 : 0), a, () => {
+    switch (u.type) {
+      case 'barbarian': poly([[r, 0], [-r, -r * 0.8], [-r, r * 0.8]], P.unitFill ? col : null, col, 1); break;
+      case 'archer': poly([[r, 0], [0, -r], [-r, 0], [0, r]], P.unitFill ? col : null, col, 1); break;
+      case 'goblin': disc(0, 0, r, P.unitFill ? col : null, col, 1); break;
+      case 'giant': rrect(-r, -r, r * 2, r * 2, 1.5, P.unitFill ? col : null, col, 1.2); break;
+      case 'breaker': disc(0, 0, r, P.unitFill ? col : null, col, 1); line(r * 0.6, -r * 0.6, r * 1.3, -r * 1.4, '#ffd23f', 1); break;
+      case 'dragon': poly([[r * 1.2, 0], [-r * 0.6, -r * 1.3], [-r * 0.1, 0], [-r * 0.6, r * 1.3]], P.unitFill ? col : null, col, 1.2); break;
+    }
+  });
+  g.restore();
+}
+const BLUEPRINT = { bg: '#1d4f91', line: '#eaf3ff', dim: 'rgba(234,243,255,0.45)', fill: 'rgba(255,255,255,0.06)', flash: '#ffe680', enemy: '#ffb36b', lw: 1.3, glow: 0, unitFill: true,
+  cat: { th: '#ffffff', defense: '#eaf3ff', resource: '#bfe1ff', special: '#d9ccff', wall: '#eaf3ff', builder: '#d6f5e3' } };
+const NEON = { bg: '#07070f', line: '#35f0ff', dim: 'rgba(120,120,180,0.5)', fill: 'rgba(255,255,255,0.02)', flash: '#ffffff', enemy: '#ff3b5c', lw: 1.4, glow: 8, unitFill: false,
+  cat: { th: '#ff4fd8', defense: '#35f0ff', resource: '#ffd23f', special: '#a66bff', wall: '#7d7dff', builder: '#5dff9b' } };
+function lineGround(P, grid, major, edge) {
+  rect(0, 0, W, H, P.bg);
+  const x0 = sx(-MARGIN), y0 = sy(0, -MARGIN), n = N;
+  g.fillStyle = grid;
+  for (let i = 0; i <= n; i++) { g.fillRect(x0 + i * T, y0, 0.4, n * T); g.fillRect(x0, y0 + i * T, n * T, 0.4); }
+  g.fillStyle = major;
+  for (let i = 0; i <= n; i += 5) { g.fillRect(x0 + i * T, y0, 0.6, n * T); g.fillRect(x0, y0 + i * T, n * T, 0.6); }
+  g.save(); g.setLineDash([4, 3]); rrect(sx(0), sy(0, 0), GRID * T, GRID * T, 2, null, edge, 1); g.restore();
+}
+
+// ---------- EMOJI: every building and troop is an emoji on a soft tile ----------
+const EMOJI = {
+  townhall: '🏰', cannon: '💣', archer: '🗼', mortar: '🌋', airdef: '🚀', wall: '🧱', goldmine: '⛏️', elixir: '🧪',
+  goldstore: '💰', elixstore: '⚗️', builder: '🛠️', spellfactory: '🔮',
+  barbarian: '😠', archerU: '🧝', goblin: '👺', giant: '🧌', breaker: '🧨', dragon: '🐉', tree: '🌳', tree2: '🌲', flower: '🌼', rock: '🪨',
+};
+const emojiCache = {};
+function emojiCanvas(ch, px) {
+  const res = Math.max(1, Math.ceil(px * scale * (window.devicePixelRatio || 1)));
+  const key = ch + '|' + res;
+  if (emojiCache[key]) return emojiCache[key];
+  const c = document.createElement('canvas'); c.width = c.height = Math.ceil(res * 1.25);
+  const x = c.getContext('2d');
+  x.font = `${res}px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.fillText(ch, c.width / 2, c.height / 2 + res * 0.06);
+  emojiCache[key] = c;
+  return c;
+}
+function emoji(ch, cx, cy, px, flip) {
+  const c = emojiCanvas(ch, px), d = px * 1.25;
+  if (flip) { g.save(); g.translate(cx, cy); g.scale(-1, 1); g.drawImage(c, -d / 2, -d / 2, d, d); g.restore(); }
+  else g.drawImage(c, cx - d / 2, cy - d / 2, d, d);
+}
+function emojiBuilding(b, cx, cy, opts) {
+  const s = def(b).size, half = (s * T) / 2 - 1.5, lvl = Math.max(1, b.lvl);
+  if (b.type === 'wall') {
+    const j = (opts && opts.join) || {}, col = b.flash > 0 ? '#ffffff' : ['#e6c79c', '#d5d8e0', '#a8afc0', '#ffd96b'][clamp(lvl - 1, 0, 3)];
+    if (b.destroyed) { disc(cx, cy, 2.5, '#cbbfae'); return; }
+    if (j.r) rect(cx, cy - 2.5, T / 2 + 0.5, 5, col);
+    if (j.l) rect(cx - T / 2 - 0.5, cy - 2.5, T / 2 + 0.5, 5, col);
+    if (j.d) rect(cx - 2.5, cy, 5, T / 2 + 0.5, col);
+    if (j.u) rect(cx - 2.5, cy - T / 2 - 0.5, 5, T / 2 + 0.5, col);
+    rrect(cx - 5, cy - 5, 10, 10, 2.5, col, 'rgba(90,70,40,0.25)', 1);
+    return;
+  }
+  const pad = b.flash > 0 ? '#ffffff' : b.destroyed ? '#e3dbd0' : 'rgba(255,255,255,0.55)';
+  rrect(cx - half, cy - half, half * 2, half * 2, 7, pad, 'rgba(60,80,40,0.18)', 1);
+  if (b.destroyed) { emoji('💥', cx, cy, s * T * 0.5); return; }
+  if (b.lvl < 1) { emoji('🚧', cx, cy, s * T * 0.55); return; }
+  emoji(EMOJI[b.type], cx, cy - 1, s * T * (b.type === 'townhall' ? 0.72 : 0.62));
+  levelPips(cx, cy + half - 3, lvl, '#7a8a6a');
+}
+function emojiUnit(u, cx, cy, now) {
+  const px = u.type === 'giant' || u.type === 'dragon' ? 15 : 10;
+  const bob = u.frozen > 0 ? 0 : Math.abs(Math.sin(now / 110 + u.walk)) * 1.2;
+  if (u.flash > 0) disc(cx, cy - bob, px * 0.55, 'rgba(255,255,255,0.9)');
+  if (u.frozen > 0) disc(cx, cy, px * 0.6, 'rgba(150,215,255,0.7)');
+  emoji(EMOJI[u.type === 'archer' ? 'archerU' : u.type], cx, cy - bob - (u.d.air ? 4 : 0), px, u.dir > 0 && u.type === 'dragon');
+}
+function emojiDecor(d, cx, cy) {
+  emoji(d.kind === 'rock' ? EMOJI.rock : d.v > 0.5 ? EMOJI.tree : EMOJI.tree2, cx, cy - 4, d.kind === 'rock' ? 8 : 13);
+}
+function emojiGround() {
+  rect(0, 0, W, H, '#a9dc8c');
+  const x0 = sx(0), y0 = sy(0, 0), sz = GRID * T;
+  rrect(x0 - 2, y0 - 2, sz + 4, sz + 4, 12, '#d6f0bf');
+  // a few flowers scattered on the field
+  for (let i = 0; i < 36; i++) {
+    const fx = ((i * 7919) % 97) / 97 * GRID, fy = ((i * 104729) % 89) / 89 * GRID;
+    if (blocked[cellIndex(Math.floor(fx), Math.floor(fy))]) continue;
+    emoji(EMOJI.flower, sx(fx), sy(0, fy), 5);
+  }
+}
+
+// ---------- the registry ----------
+const THEMES = {
+  toy: { name: 'Toy', blurb: 'Soft flat shapes and round little critters.', smooth: true, canvasFont: 'Fredoka, sans-serif', ink: 'rgba(40,40,70,0.55)',
+    night: 'rgba(30, 30, 90, 0.42)', light: null,
+    ground: toyGround, building: toyBuilding, unit: toyUnit, decor: toyDecor, artHeight: (b) => def(b).size * T - 2 },
+  emoji: { name: 'Emoji', blurb: 'Every building and raider is an emoji.', smooth: true, canvasFont: 'Fredoka, sans-serif', ink: 'rgba(60,60,40,0.5)',
+    night: 'rgba(20, 20, 70, 0.45)', light: null,
+    ground: emojiGround, building: emojiBuilding, unit: emojiUnit, decor: emojiDecor, artHeight: (b) => def(b).size * T - 2 },
+  blueprint: { name: 'Blueprint', blurb: 'White line drawings on blue grid paper.', smooth: true, canvasFont: '"Chakra Petch", monospace', ink: '#eaf3ff', textOutline: '#123a70',
+    night: 'rgba(5, 15, 50, 0.45)', light: null,
+    ground: () => lineGround(BLUEPRINT, 'rgba(255,255,255,0.07)', 'rgba(255,255,255,0.14)', 'rgba(255,255,255,0.7)'),
+    building: (b, cx, cy, o) => lineBuilding(b, cx, cy, o, BLUEPRINT), unit: (u, cx, cy, n) => lineUnit(u, cx, cy, n, BLUEPRINT),
+    decor: (d, cx, cy) => { if (d.kind === 'tree') ring(cx, cy, 4, 4, 'rgba(255,255,255,0.35)'); }, artHeight: (b) => def(b).size * T - 3 },
+  neon: { name: 'Neon', blurb: 'Glowing outlines on a dark grid.', smooth: true, canvasFont: '"Chakra Petch", monospace', ink: '#35f0ff', textOutline: '#000000',
+    night: 'rgba(0, 0, 0, 0.35)', light: null,
+    ground: () => lineGround(NEON, 'rgba(80,80,200,0.12)', 'rgba(80,80,220,0.25)', 'rgba(53,240,255,0.6)'),
+    building: (b, cx, cy, o) => lineBuilding(b, cx, cy, o, NEON), unit: (u, cx, cy, n) => lineUnit(u, cx, cy, n, NEON),
+    decor: (d, cx, cy) => { if (d.kind === 'tree') disc(cx, cy, 1.2, 'rgba(93,255,155,0.35)'); }, artHeight: (b) => def(b).size * T - 3 },
+  pixel: { name: 'Pixel', blurb: 'Chunky 8-bit pixel art (the old look).', smooth: false, canvasFont: 'monospace', ink: INK,
+    night: 'rgba(8, 12, 48, 0.5)', light: 'rgba(255, 200, 90, 0.10)',
+    ground: () => { drawForest(); drawGround(); },
+    building: (b, cx, cy, o) => {
+      if (b.type === 'wall' && !b.destroyed && b.lvl >= 1 && !(o && o.ghost)) {
+        const j = (o && o.join) || {};
+        drawWallBlock(cx, Math.round(cy + T / 2) - 2, b.lvl, (col) => (b.flash > 0 ? '#ffffff' : col), j.l, j.r);
+      } else drawBuilding(b, cx, cy, Object.assign({ noPad: true }, o));
+    },
+    unit: (u, cx, cy, now) => pixelUnit(u, cx, cy, now), decor: (d, cx, cy) => drawDecor(d), artHeight: (b) => artHeight(b) },
+};
+const THEME_KEY = 'clash-theme';
+let THEME = THEMES.toy, themeId = 'toy';
+function applyTheme(id) {
+  themeId = THEMES[id] ? id : 'toy';
+  THEME = THEMES[themeId];
+  SMOOTH = THEME.smooth;
+  document.body.dataset.theme = themeId;
+  try { localStorage.setItem(THEME_KEY, themeId); } catch (e) { /* ignore */ }
+  for (const k in emojiCache) delete emojiCache[k];
+  resize();
+}
+try { const saved = localStorage.getItem(THEME_KEY); if (saved && THEMES[saved]) themeId = saved; } catch (e) { /* ignore */ }
+
 // ---------- the frame ----------
 function render(now) {
   const night = S.phase === 'raid' || S.phase === 'won' || S.phase === 'lost';
-  drawForest();
-  drawGround();
+  THEME.ground();
   // flat ground layer: building pads, selection, placement squares
   const sel = selectedId && byId(selectedId);
   if (sel && !placing) { const s = def(sel).size, c = center(sel); drawSelect(sx(c.x), sy(0, c.y), s); }
@@ -1286,11 +1701,11 @@ function render(now) {
     const s = TYPES[p.type].size;
     items.push({ depth: p.y + s - 0.005, draw: () => {
       g.globalAlpha = 0.8;
-      drawBuilding({ type: p.type, lvl: placing.lvl || 1, x: p.x, y: p.y, angle: 0.6, cons: null }, sx(p.x + s / 2), sy(0, p.y + s / 2), { ghost: true });
+      THEME.building({ type: p.type, lvl: p.lvl || 1, x: p.x, y: p.y, angle: 0.6, cons: null }, sx(p.x + s / 2), sy(0, p.y + s / 2), { ghost: true, join: {} });
       g.globalAlpha = 1;
     } });
   }
-  for (const d of decor) items.push({ depth: d.y, draw: () => drawDecor(d) });
+  for (const d of decor) items.push({ depth: d.y, draw: () => { const cx = sx(d.x), cy = sy(0, d.y); if (cx > -24 && cx < W + 24 && cy > -10 && cy < H + 40) THEME.decor(d, cx, cy); } });
   for (const u of units) items.push({ depth: u.y + (u.d.air ? 60 : 0), draw: () => drawUnit(u, now) });
   for (const f of flags) items.push({ depth: f.y, draw: () => drawFlag(f, now) });
   items.sort((a, b) => a.depth - b.depth);
@@ -1299,7 +1714,7 @@ function render(now) {
   for (const b of S.buildings) {
     if (b.destroyed || b.hp >= maxHp(b) || S.phase !== 'raid') continue;
     const s = def(b).size, c = center(b);
-    drawHpBar(sx(c.x), sy(0, c.y) + (s * T) / 2 - artHeight(b) - 5, Math.max(8, s * T - 6), b.hp / maxHp(b));
+    drawHpBar(sx(c.x), sy(0, c.y) + (s * T) / 2 - THEME.artHeight(b) - 5, Math.max(8, s * T - 6), b.hp / maxHp(b));
   }
   // ranges
   if (sel && def(sel).range && !placing) {
@@ -1316,7 +1731,7 @@ function render(now) {
   for (const t of texts) {
     const k = t.t / t.life;
     const x = sx(t.x), y = sy(0, t.y) - 14 - k * 14;
-    ptext(t.text, x - textWidth(t.text) / 2, y, t.color);
+    worldText(t.text, x, y, t.color, 8);
   }
   if (spellArmed && hover && S.phase === 'raid') {
     const sp = SPELLS[spellArmed], x = sx(hover.x), y = sy(0, hover.y), r = Math.round(sp.radius * T);
@@ -1325,29 +1740,29 @@ function render(now) {
   }
   // night: dark blue, with torch light around defenses and the Town Hall
   if (night) {
-    g.fillStyle = 'rgba(8, 12, 48, 0.5)';
+    g.fillStyle = THEME.night;
     g.fillRect(0, 0, W, H);
-    for (const b of S.buildings) {
+    if (THEME.light) for (const b of S.buildings) {
       if (b.destroyed || !(def(b).cat === 'defense' || b.type === 'townhall')) continue;
       const c = center(b);
-      circ(sx(c.x), sy(0, c.y), b.type === 'townhall' ? 30 : 20, 'rgba(255, 200, 90, 0.10)');
+      circ(sx(c.x), sy(0, c.y), b.type === 'townhall' ? 30 : 20, THEME.light);
     }
   }
 }
 function drawBuildingAt(b) {
-  const s = def(b).size, c = center(b);
+  const c = center(b);
   const cx = sx(c.x), cy = sy(0, c.y);
   if (cx < -50 || cx > W + 50 || cy < -30 || cy > H + 80) return;
-  if (b.type === 'wall' && !b.destroyed && b.lvl >= 1) {
-    const nbr = (dx) => {
-      if (!inField(b.x + dx, b.y)) return false;
-      const id = blocked[cellIndex(b.x + dx, b.y)]; const o = id && byId(id);
-      return o && o.type === 'wall' && !o.destroyed && o.lvl >= 1;
+  let join = null;
+  if (b.type === 'wall') {
+    const nbr = (dx, dy) => {
+      if (!inField(b.x + dx, b.y + dy)) return false;
+      const id = blocked[cellIndex(b.x + dx, b.y + dy)]; const o = id && byId(id);
+      return !!(o && o.type === 'wall' && !o.destroyed && o.lvl >= 1);
     };
-    drawWallBlock(cx, Math.round(cy + T / 2) - 2, b.lvl, (col) => (b.flash > 0 ? '#ffffff' : col), nbr(-1), nbr(1));
-    return;
+    join = { l: nbr(-1, 0), r: nbr(1, 0), u: nbr(0, -1), d: nbr(0, 1) };
   }
-  drawBuilding(b, cx, cy, { noPad: true });
+  THEME.building(b, cx, cy, { join });
 }
 function drawSelect(cx, cy, s) {
   const blink = Math.floor(performance.now() / 300) % 2;
@@ -1359,6 +1774,10 @@ function drawSelect(cx, cy, s) {
 function drawUnit(u, now) {
   const cx = sx(u.x), cy = sy(0, u.y);
   if (cx < -30 || cx > W + 30 || cy < -40 || cy > H + 30) return;
+  THEME.unit(u, cx, cy, now);
+  if (SMOOTH && u.hp < u.maxhp) drawHpBar(cx, cy - (TOY.size[u.type] || 3) - (u.d.air ? 4 : 0) - 6, 9, u.hp / u.maxhp);
+}
+function pixelUnit(u, cx, cy, now) {
   const tint = u.flash > 0 ? 'flash' : u.frozen > 0 ? 'ice' : null;
   const img = spriteCanvas(u.d.sprite, u.dir < 0, tint);
   const bob = u.frozen > 0 ? 0 : u.d.air ? Math.round(Math.sin(now / 160 + u.walk)) : (Math.floor(u.walk) % 2);
@@ -1425,11 +1844,25 @@ function drawFx(e) {
    ===================================================================== */
 function resize() {
   const vw = window.innerWidth, vh = window.innerHeight;
+  if (SMOOTH) {
+    // full resolution: world units are scaled up with a transform, so shapes stay sharp
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    W = vw / scale; H = vh / scale;
+    canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+    canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
+    g = canvas.getContext('2d');
+    g.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    g.imageSmoothingEnabled = true;
+    canvas.classList.add('smooth');
+    return;
+  }
   W = Math.ceil(vw / scale); H = Math.ceil(vh / scale);
   canvas.width = W; canvas.height = H;
   canvas.style.width = W * scale + 'px'; canvas.style.height = H * scale + 'px';
   g = canvas.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
   g.imageSmoothingEnabled = false;
+  canvas.classList.remove('smooth');
 }
 function autoScale() {
   const vw = window.innerWidth, vh = window.innerHeight;
@@ -1573,6 +2006,8 @@ const ICONS = {
   moon: ['............', '....wwww....', '...www......', '..www.......', '..ww........', '..ww........', '..www.......', '...wwww..w..', '....wwwwww..', '......ww....', '............', '............'],
   hammer: ['............', '.mmmmmm.....', '.mMMMMm.....', '.mmmmmm.....', '...bb.......', '...bb.......', '...bb.......', '...bb.......', '...bb.......', '...bb.......', '...nn.......', '............'],
   clock: ['....kkkk....', '..kkwwwwkk..', '.kwwwwkwwwk.', '.kwwwwkwwwk.', 'kwwwwwkwwwwk', 'kwwwwwkkkkwk', 'kwwwwwwwwwwk', 'kwwwwwwwwwwk', '.kwwwwwwwwk.', '.kwwwwwwwwk.', '..kkwwwwkk..', '....kkkk....'],
+  wall: ['............', '............', '.mmm.mmm.mmm', '.mmm.mmm.mmm', '............', 'mm.mmm.mmm.m', 'mm.mmm.mmm.m', '............', '.mmm.mmm.mmm', '.mmm.mmm.mmm', '............', '............'],
+  palette: ['....wwww....', '..wwwwwwww..', '.wwrrwwwyyw.', '.wwrrwwwyyw.', 'wwwwwwwwwwww', 'wuuwwwwwwww.', 'wuuwwwwwww..', 'wwwwwwgg....', '.wwwwwgg.ww.', '.wwwwwwwwww.', '..wwwwwwww..', '....wwww....'],
   bolt: ['.......yyyy.', '......yyyy..', '.....yyyy...', '....yyyy....', '...yyyyyyyy.', '..yyyyyyyy..', '......yyy...', '.....yyy....', '....yyy.....', '...yy.......', '..yy........', '.y..........'],
   snow: ['.....l......', '.l...l...l..', '..l..l..l...', '...l.l.l....', '....lll.....', 'lllllwlllll.', '....lll.....', '...l.l.l....', '..l..l..l...', '.l...l...l..', '.....l......', '............'],
   heart: ['............', '..rr....rr..', '.rppr..rrrr.', 'rpprrrrrrrrr', 'rprrrrrrrrrr', 'rrrrrrrrrrrr', '.rrrrrrrrrr.', '..rrrrrrrr..', '...rrrrrr...', '....rrrr....', '.....rr.....', '............'],
@@ -1641,6 +2076,7 @@ function refreshUI() {
     $(res + 'Fill').style.width = clamp((S[res] / cap) * 100, 0, 100) + '%';
   }
   $('shopBtn').hidden = !building || !!placing;
+  $('wallsBtn').hidden = !building || !!placing || !wallTotal();
   $('defendBtn').hidden = !building || !!placing;
   $('defendBtn').title = `Start night ${S.day}: the raid begins`;
   $('wave').hidden = S.phase !== 'raid';
@@ -1820,7 +2256,7 @@ function renderSel(force) {
     } else if (t.max > 1) actions.push('<button class="btn mini" disabled>Max level</button>');
   }
   if (building && b.type !== 'townhall') actions.push('<button class="btn mini wood" id="moveBtn">Move</button>');
-  if (building && b.type === 'wall' && !b.cons) actions.push('<button class="btn mini no" id="sellBtn">Remove</button>');
+  if (building && b.type === 'wall' && !b.cons) actions.push('<button class="btn mini no" id="sellBtn">Remove</button>', '<button class="btn mini wood" id="rearrangeBtn">Rearrange all walls</button>');
   el.innerHTML = `
     <div class="sel-head">
       <div class="sel-name ol" title="${t.desc}">${t.name}${lvl >= 1 ? ` <span class="lvl">Lv ${lvl}</span>` : ''}</div>
@@ -1842,6 +2278,7 @@ function renderSel(force) {
   const rp = $('repairBtn'); if (rp) rp.onclick = () => repair(b);
   const up = $('upBtn'); if (up) up.onclick = () => upgrade(b);
   const mv = $('moveBtn'); if (mv) mv.onclick = () => beginMove(b);
+  const ra = $('rearrangeBtn'); if (ra) ra.onclick = beginRearrange;
   const sl = $('sellBtn'); if (sl) sl.onclick = () => { S.buildings = S.buildings.filter((o) => o !== b); rebuildBlocked(); deselect(); save(); refreshUI(); sfx('click'); };
 }
 function updateSelLive(b) {
@@ -1889,19 +2326,45 @@ function beginMove(b) {
   placing = { type: b.type, x: b.x, y: b.y, ok: true, moveId: b.id, lvl: b.lvl };
   refreshUI();
 }
+// ----- rearranging every wall from scratch -----
+const stashCount = () => (S.wallStash || []).length;
+const wallTotal = () => countOf('wall') + stashCount();
+function beginRearrange() {
+  if (S.phase !== 'build' || placing) return;
+  const walls = S.buildings.filter((b) => b.type === 'wall');
+  if (!walls.length && !stashCount()) { toast('You have no walls yet'); return; }
+  closeModal(); deselect();
+  // lift every wall off the map; the best walls get placed first
+  const pool = walls.map((w) => ({ lvl: w.lvl, hp: w.destroyed ? 0 : w.hp })).concat(S.wallStash.map((w) => ({ ...w })));
+  pool.sort((a, b) => b.lvl - a.lvl || b.hp - a.hp);
+  S.buildings = S.buildings.filter((b) => b.type !== 'wall');
+  placing = { type: 'wall', multi: true, rearrange: true, walls: [], pool, backup: walls, stashBackup: S.wallStash.slice(), moveId: null };
+  rebuildBlocked();
+  refreshUI();
+  toast('All walls picked up. Tap or drag to place them again.', 2600);
+}
 // every square being placed right now, for drawing
 function placingSpots() {
   if (!placing) return [];
-  if (placing.multi) return placing.walls.map((w) => ({ type: 'wall', x: w.x, y: w.y, ok: true }));
-  return [{ type: placing.type, x: placing.x, y: placing.y, ok: placing.ok }];
+  if (placing.multi) {
+    // free walls (rearranged or stored) keep their level; bought ones are level 1
+    const free = placing.rearrange ? placing.pool : S.wallStash;
+    return placing.walls.map((w, i) => ({ type: 'wall', x: w.x, y: w.y, ok: true, lvl: free[i] ? free[i].lvl : 1 }));
+  }
+  return [{ type: placing.type, x: placing.x, y: placing.y, ok: placing.ok, lvl: placing.lvl }];
 }
 // ----- laying many walls at once -----
 const pendingAt = (x, y) => placing.walls.findIndex((w) => w.x === x && w.y === y);
+function wallsToBuy(n) { return placing.rearrange ? 0 : Math.max(0, n - stashCount()); }
 function addPendingWall(x, y, quiet) {
   if (x < 0 || y < 0 || x >= GRID || y >= GRID || pendingAt(x, y) >= 0 || !fits('wall', x, y)) return false;
   const n = placing.walls.length + 1, price = priceOf('wall', 1);
-  if (countOf('wall') + n > limitOf('wall')) { if (!quiet) toast(`Wall limit reached (${limitOf('wall')}). Upgrade the Town Hall for more.`); return false; }
-  if (S.gold < price[0] * n) { if (!quiet) toast('Not enough gold for more walls'); return false; }
+  if (placing.rearrange) {
+    if (n > placing.pool.length) { if (!quiet) toast('All your walls are placed'); return false; }
+  } else {
+    if (wallTotal() + wallsToBuy(n) > limitOf('wall')) { if (!quiet) toast(`Wall limit reached (${limitOf('wall')}). Upgrade the Town Hall for more.`); return false; }
+    if (S.gold < price[0] * wallsToBuy(n)) { if (!quiet) toast('Not enough gold for more walls'); return false; }
+  }
   placing.walls.push({ x, y });
   return true;
 }
@@ -1916,18 +2379,39 @@ function paintWallsTo(x, y) {
   placing.paintFrom = [x, y];
   updatePlaceTip();
 }
-function cancelPlace() { placing = null; refreshUI(); }
+function cancelPlace() {
+  if (placing && placing.rearrange) {   // put every wall back where it was
+    S.buildings.push(...placing.backup);
+    S.wallStash = placing.stashBackup;
+    placing = null; rebuildBlocked(); refreshUI();
+    toast('Walls put back');
+    return;
+  }
+  placing = null; refreshUI();
+}
 function confirmPlace() {
   if (!placing) return;
   const p = placing;
-  if (p.multi) {
-    const n = p.walls.length, price = priceOf('wall', 1);
-    if (!n) { toast('Tap the ground to add walls'); sfx('nope'); return; }
-    if (S.gold < price[0] * n) { toast('Not enough gold'); sfx('nope'); return; }
-    S.gold -= price[0] * n;
-    for (const w of p.walls) add('wall', w.x, w.y, 1);
+  if (p.multi && p.rearrange) {
+    // place the walls that were drawn; any left over are stored and can be placed later from the shop
+    p.walls.forEach((w, i) => { const src = p.pool[i], b = add('wall', w.x, w.y, src.lvl); if (src.hp > 0) b.hp = Math.min(src.hp, maxHp(b)); else b.hp = 1; });
+    S.wallStash = p.pool.slice(p.walls.length);
     placing = null; rebuildBlocked(); sfx('build'); save(); refreshUI();
-    toast(`Built ${n} wall${n > 1 ? 's' : ''}`);
+    toast(S.wallStash.length ? `Walls placed. ${S.wallStash.length} stored for later (free in the shop).` : 'Walls rearranged', 2600);
+    return;
+  }
+  if (p.multi) {
+    const n = p.walls.length, price = priceOf('wall', 1), buy = wallsToBuy(n);
+    if (!n) { toast('Tap the ground to add walls'); sfx('nope'); return; }
+    if (S.gold < price[0] * buy) { toast('Not enough gold'); sfx('nope'); return; }
+    S.gold -= price[0] * buy;
+    for (const w of p.walls) {
+      const st = S.wallStash.shift();   // stored walls go down first, for free
+      const b = add('wall', w.x, w.y, st ? st.lvl : 1);
+      if (st && st.hp > 0) b.hp = Math.min(st.hp, maxHp(b));
+    }
+    placing = null; rebuildBlocked(); sfx('build'); save(); refreshUI();
+    toast(`Placed ${n} wall${n > 1 ? 's' : ''}`);
     return;
   }
   if (!p.ok) { toast("Can't build there"); sfx('nope'); return; }
@@ -1955,10 +2439,14 @@ function updatePlaceTip() {
   if (!placing) { tip.hidden = true; return; }
   const t = TYPES[placing.type];
   let html;
-  if (placing.multi) {
-    const n = placing.walls.length, price = priceOf('wall', 1);
-    html = `<div class="tip-title">${n} wall${n === 1 ? '' : 's'} · ${costHTML([price[0] * n, 0])}</div>
-      <div class="tip-help">Tap ground to add, tap a wall to remove. Drag from a wall to draw a line. Walls left: ${Math.max(0, limitOf('wall') - countOf('wall') - n)}</div>`;
+  if (placing.multi && placing.rearrange) {
+    const n = placing.walls.length, total = placing.pool.length;
+    html = `<div class="tip-title">Rearranging walls · ${n} of ${total} placed</div>
+      <div class="tip-help">Tap ground to place, tap a wall to pick it up. Drag from a wall to draw a line. ✔ saves (unplaced walls are stored), ✖ puts everything back.</div>`;
+  } else if (placing.multi) {
+    const n = placing.walls.length, price = priceOf('wall', 1), buy = wallsToBuy(n), free = n - buy;
+    html = `<div class="tip-title">${n} wall${n === 1 ? '' : 's'} · ${buy ? costHTML([price[0] * buy, 0]) : 'Free'}${free ? ` <span class="tip-free">(${free} stored)</span>` : ''}</div>
+      <div class="tip-help">Tap ground to add, tap a wall to remove. Drag from a wall to draw a line. Walls left: ${Math.max(0, limitOf('wall') - wallTotal() - buy) + Math.max(0, stashCount() - free)}</div>`;
   } else if (placing.moveId) {
     html = `<div class="tip-title">Moving ${t.name}</div><div class="tip-help">${placing.ok ? 'Drag it or tap a spot, then tap ✔' : "<span class='bad'>Can't go here: it overlaps something</span>"}</div>`;
   } else {
@@ -1991,16 +2479,17 @@ function openShop() {
   const list = SHOP_TABS.find((t) => t[0] === shopTab)[2];
   for (const type of list) {
     const t = TYPES[type];
-    const have = countOf(type), lim = limitOf(type);
-    const price = priceOf(type, 1);
-    const maxed = have >= lim;
+    const isWall = type === 'wall', stored = isWall ? stashCount() : 0;
+    const have = isWall ? wallTotal() : countOf(type), lim = limitOf(type);
+    const price = stored ? [0, 0, 0] : priceOf(type, 1);
+    const maxed = have >= lim && !stored;
     const nextTh = LIMITS[type].findIndex((v) => v > have) + 1;
     const card = document.createElement('button');
     card.className = 'card' + (maxed ? ' locked' : '');
     card.innerHTML = `<div class="art"></div>
       <div class="name">${t.name}</div>
       <div class="meta">${maxed ? '' : costHTML(price)}<span class="count">${have}/${lim}</span></div>
-      <div class="meta"><span class="count">${maxed ? '' : daysLabel(price[2])}</span></div>
+      <div class="meta"><span class="count">${maxed ? '' : stored ? stored + ' stored' : daysLabel(price[2])}</span></div>
       ${maxed ? `<div class="lock ol">${nextTh > 0 ? 'TOWN HALL ' + nextTh : 'MAXED'}</div>` : ''}`;
     card.querySelector('.art').appendChild(previewCanvas(type));
     hydrateCosts(card);
@@ -2017,11 +2506,18 @@ function openShop() {
 }
 function previewCanvas(type, height) {
   const c = document.createElement('canvas');
-  c.width = 72; c.height = height || 60;
-  const prev = g; g = c.getContext('2d'); g.imageSmoothingEnabled = false;
-  const s = TYPES[type].size;   // side view: the building stands on a strip of ground near the bottom
-  rect(0, c.height - 5, c.width, 5, '#90d870');
-  drawBuilding({ type, lvl: 1, x: 0, y: 0, angle: 0.5, cons: null, hp: 1 }, 36, Math.round(c.height - 3 - (s * T) / 2), { noPad: true });
+  const w = 72, h = height || 60, k = SMOOTH ? 3 : 1;   // smooth themes draw the picture at 3x so it stays sharp
+  c.width = w * k; c.height = h * k;
+  const prev = g; g = c.getContext('2d');
+  g.imageSmoothingEnabled = SMOOTH;
+  if (SMOOTH) g.scale(k, k);
+  const s = TYPES[type].size;
+  const fake = { type, lvl: 1, x: 0, y: 0, angle: 0.5, cons: null, hp: 1 };
+  if (SMOOTH) THEME.building(fake, w / 2, h / 2, { preview: true });
+  else {   // pixel theme: the building stands on a strip of ground
+    rect(0, h - 5, w, 5, '#90d870');
+    drawBuilding(fake, w / 2, Math.round(h - 3 - (s * T) / 2), { noPad: true });
+  }
   g = prev;
   c.style.width = '144px'; c.style.height = '120px';
   return c;
@@ -2067,6 +2563,52 @@ function showTitle() {
   hasSave ? [['NEW', 'no', () => { closeModal(); newGame(); rebuildBlocked(); refreshUI(); }], [`CONTINUE · DAY ${S.day}`, 'go', () => { closeModal(); }]]
     : [['PLAY', 'go', () => { closeModal(); }]], 'title-screen');
 }
+// ----- theme picker -----
+// a tiny scene (Town Hall, cannon, a wall line and two raiders) drawn in a given theme
+function themePreview(id) {
+  const c = document.createElement('canvas');
+  const w = 200, h = 108, th = THEMES[id], k = th.smooth ? 2 : 1;
+  c.width = w * k; c.height = h * k;
+  const keep = { g, THEME, SMOOTH, W, H, cx: cam.x, cy: cam.y };
+  g = c.getContext('2d'); THEME = th; SMOOTH = th.smooth; W = w; H = h;
+  g.imageSmoothingEnabled = SMOOTH; if (SMOOTH) g.scale(k, k);
+  cam.x = 15 * T; cam.y = 15 * T;   // look at the middle of the map
+  try {
+    th.ground();
+    const now = performance.now();
+    const at = (tx, ty) => [sx(tx), sy(0, ty)];
+    const walls = [[11, 17], [12, 17], [13, 17], [14, 17]];
+    for (const [x, y] of walls) {
+      const [px, py] = at(x + 0.5, y + 0.5);
+      th.building({ type: 'wall', lvl: 2, x, y, hp: 1 }, px, py, { join: { l: x > 11, r: x < 14 } });
+    }
+    let [px, py] = at(15, 15); th.building({ type: 'townhall', lvl: 2, x: 13, y: 13, hp: 1, angle: 0 }, px, py, {});
+    [px, py] = at(10.5, 14.5); th.building({ type: 'cannon', lvl: 1, x: 9, y: 13, hp: 1, angle: 0.4 }, px, py, {});
+    [px, py] = at(19.5, 14.5); th.building({ type: 'elixir', lvl: 1, x: 18, y: 13, hp: 1, angle: 0 }, px, py, {});
+    for (const [type, x, y] of [['barbarian', 19.2, 17.6], ['giant', 21, 18.2]]) {
+      [px, py] = at(x, y);
+      th.unit({ type, d: UNITS[type], x, y, dir: -1, walk: 0, flash: 0, frozen: 0, hp: 1, maxhp: 1 }, px, py, now);
+    }
+  } finally {
+    g = keep.g; THEME = keep.THEME; SMOOTH = keep.SMOOTH; W = keep.W; H = keep.H; cam.x = keep.cx; cam.y = keep.cy;
+  }
+  c.style.width = '200px'; c.style.height = '108px';
+  c.className = th.smooth ? 'theme-pic' : 'theme-pic pixelated';
+  return c;
+}
+function showThemes() {
+  popup('THEME', '<p>Pick a look. You can change it any time.</p><div class="theme-grid" id="themeGrid"></div>', [['DONE', 'go', closeModal]], 'themes');
+  const grid = $('themeGrid');
+  for (const [id, th] of Object.entries(THEMES)) {
+    const card = document.createElement('button');
+    card.className = 'theme-card' + (id === themeId ? ' on' : '');
+    card.setAttribute('aria-pressed', id === themeId);
+    card.appendChild(themePreview(id));
+    card.insertAdjacentHTML('beforeend', `<div class="theme-name">${th.name}${id === themeId ? ' <span class="now">ON</span>' : ''}</div><div class="theme-blurb">${th.blurb}</div>`);
+    card.onclick = () => { applyTheme(id); sfx('click'); refreshUI(); showThemes(); };
+    grid.appendChild(card);
+  }
+}
 function showPatchNotes() {
   const body = PATCH_NOTES.map((p) => `<section class="patch">
       <h3 class="ol">v${p.v}${p.v === GAME_VERSION ? ' <span class="now">CURRENT</span>' : ''}</h3>
@@ -2077,6 +2619,8 @@ function showPatchNotes() {
 }
 $('versionBtn').textContent = 'v' + GAME_VERSION;
 $('versionBtn').onclick = () => { unlockAudio(); sfx('click'); showPatchNotes(); };
+$('wallsBtn').onclick = () => { unlockAudio(); sfx('click'); beginRearrange(); };
+$('themeBtn').onclick = () => { unlockAudio(); sfx('click'); showThemes(); };
 buildSpellBar();
 $('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
 $('repairAllBtn').onclick = () => { unlockAudio(); repairAll(); };
@@ -2161,7 +2705,7 @@ function frame(now) {
 
 // boot
 scale = autoScale();
-resize();
+applyTheme(themeId);
 makeDecor();
 showTitle();
 requestAnimationFrame(frame);
