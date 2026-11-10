@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Clash</title>
-<meta name="description" content="A single-player, defense-only village game in 8-bit pixel art. Build by day, survive a raid every night.">
-<meta name="theme-color" content="#121a33">
+<meta name="description" content="A single-player, defense-only village game in neon. Build by day, survive a raid every night.">
+<meta name="theme-color" content="#07070f">
 <meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,7 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="preload" href="fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/exo2.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,27 +23,26 @@
 
 <div id="hud">
   <div class="top-left">
-    <div class="phase" id="phase">
-      <div class="icon-wrap"><canvas class="ico" id="phaseIcon" width="12" height="12" style="width:26px;height:26px"></canvas></div>
-      <div>
-        <div class="phase-title ol" id="phaseTitle">DAY 1</div>
-        <div class="phase-sub" id="phaseSub"></div>
-      </div>
-    </div>
-    <div class="tl-row"><button class="version-btn" id="versionBtn" aria-label="Version and patch notes">v</button><button class="version-btn theme-btn" id="themeBtn" aria-label="Change the look"><canvas class="ico" data-icon="palette" width="12" height="12" style="width:14px;height:14px"></canvas>Theme</button></div>
+    <button class="phase" id="phase" aria-label="Village stats" title="Village stats">
+      <span class="icon-wrap"><canvas class="ico" id="phaseIcon" width="12" height="12" style="width:26px;height:26px"></canvas></span>
+      <span class="phase-text">
+        <span class="phase-title" id="phaseTitle">DAY 1</span>
+        <span class="phase-sub" id="phaseSub"></span>
+      </span>
+    </button>
   </div>
 
   <div class="top-right">
-    <div class="res gold" id="resGold" title="Gold">
+    <button class="res gold" id="resGold" title="Tap to try another resource style">
       <canvas class="ico" data-icon="gold" width="12" height="12"></canvas>
       <div class="track"><div class="fill" id="goldFill"></div><div class="amount ol" id="goldAmt">0</div></div>
       <div class="cap" id="goldCap"></div>
-    </div>
-    <div class="res elixir" id="resElixir" title="Elixir">
+    </button>
+    <button class="res elixir" id="resElixir" title="Tap to try another resource style">
       <canvas class="ico" data-icon="elixir" width="12" height="12"></canvas>
       <div class="track"><div class="fill" id="elixirFill"></div><div class="amount ol" id="elixirAmt">0</div></div>
       <div class="cap" id="elixirCap"></div>
-    </div>
+    </button>
   </div>
 
   <div class="wave ol" id="wave" hidden>
@@ -51,15 +50,16 @@
     <span id="waveText">ENEMIES 0</span>
   </div>
 
+  <!-- one row of actions along the bottom -->
   <div class="bottom-left">
-    <button class="btn go square" id="repairAllBtn" hidden><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:22px;height:22px"></canvas><span class="sq-label">Repair</span><span class="sq-cost" id="repairAllText">0</span></button>
-    <button class="btn war square big" id="defendBtn" aria-label="Start the night"><canvas class="ico" data-icon="moon" width="12" height="12" style="width:28px;height:28px"></canvas><span class="sq-label">Fight</span></button>
+    <button class="btn war square" id="defendBtn" aria-label="Start the night"><canvas class="ico" data-icon="moon" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Fight</span></button>
+    <button class="btn go square" id="repairAllBtn" hidden><span class="sq-badge" id="repairAllText">0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Repair</span></button>
+    <button class="btn wood square" id="wallsBtn" hidden aria-label="Rearrange all walls" title="Rearrange all walls"><canvas class="ico" data-icon="wall" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Walls</span></button>
   </div>
 
   <div class="bottom-right">
     <button class="btn round wood" id="speedBtn" hidden aria-label="Game speed">x1</button>
-    <button class="btn square wood" id="wallsBtn" hidden aria-label="Rearrange all walls" title="Rearrange all walls"><canvas class="ico" data-icon="wall" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Walls</span></button>
-    <button class="btn square big" id="shopBtn" aria-label="Shop"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:30px;height:30px"></canvas><span class="sq-label">Shop</span></button>
+    <button class="btn square shop" id="shopBtn" aria-label="Shop"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Shop</span></button>
   </div>
 
   <div class="bottom-center">

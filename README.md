@@ -1,6 +1,6 @@
 # Clash
 
-A single-player, defense-only village game in 8-bit pixel art.
+A single-player, defense-only village game with a neon look.
 Build by day. Survive a raid every night. How many nights can you last?
 
 ## Play
@@ -19,35 +19,37 @@ screen and works offline.
 - **Day: build.** Build and upgrade. Everything except walls takes at least a
   day and needs a free builder (one per Builder's Hut). Walls go up instantly:
   tap or drag to lay many at once, then confirm to buy them all.
-- **Night: fight.** A wave attacks in the dark. Your defenses fight on their own.
-- After each night, a summary shows what your Gold Mines and Elixir Collectors
-  earned before you start the next day. There is no extra survival bonus.
+- **Night: fight.** A wave attacks. Your defenses fight on their own.
+- After each night, a summary shows what your mines and pumps earned before
+  you start the next day.
 - Tap any building to see its stats, repair it or upgrade it. Damage stays
-  until you pay gold to repair it, and you can repair mid-raid. **Repair** in
-  the bottom left fixes everything at once.
+  until you repair it. **Repair** (bottom row) lists every damaged building,
+  with a button for each one and one for all of them; it works mid-raid too.
+- **Walls** (bottom row) picks up every wall so you can lay them out again.
+  Walls you leave unplaced are stored and free to place later.
 - **Spells (Town Hall 4):** build a Spell Factory, brew Lightning, Heal and
   Freeze by day, and cast them at night (tap a spell, then tap the map; keys
   1–3 also work).
-- Zoom with the mouse wheel, a pinch, or the + / − keys.
-- **Themes:** tap Theme in the top left to switch between Toy, Emoji,
-  Blueprint, Neon and Pixel. The choice is remembered on this device.
-- **Walls:** tap Walls in the bottom right to pick up every wall and lay them
-  out again. Walls you leave unplaced are stored and free to place later.
-- The Town Hall stores gold and elixir first; anything over its limit is split
+- The Town Hall stores resources first; anything over its limit is split
   evenly across your storages. Tap a building to see how much it holds.
+- Tap the Day/Night box for village stats; the version number and patch notes
+  are at the bottom of that window.
+- Tap a resource bar to cycle through resource styles (Gold & Energy, Gold &
+  Plasma, Gold & Crystal, Credits & Fuel).
+- Zoom with the mouse wheel, a pinch, or the + / − keys.
 - The moment your Town Hall falls, the game is over. The village saves itself
   every day.
-- Simple top-down art in several themes; the Pixel theme is the old look. Tap the version number in the top left to read the patch notes.
+- Neon look: glowing outlines on a dark grid.
 
 ## Files
 
 ```
 index.html             page and HUD markup
 style.css              interface styles
-game.js                the whole game: simulation, pixel renderer, UI, sound
+game.js                the whole game: simulation, neon renderer, UI, sound
 manifest.webmanifest   home-screen install info
 sw.js                  offline cache (bump VERSION when files change)
-fonts/                 Fredoka, Chakra Petch, Pixelify Sans (SIL Open Font License)
+fonts/                 Inter and Exo 2 (SIL Open Font License)
 icons/                 app icons
 ```
 
