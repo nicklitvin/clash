@@ -23,10 +23,14 @@ screen and works offline.
 - After each night, a summary shows what your mines and pumps earned before
   you start the next day.
 - Tap any building to see its stats, repair it or upgrade it. Damage stays
-  until you repair it. **Repair** (bottom row) lists every damaged building,
+  until you repair it. **Repair** (bottom right) lists every damaged building,
   with a button for each one and one for all of them; it works mid-raid too.
-- **Walls** (bottom row) picks up every wall so you can lay them out again.
+- **Walls** (bottom right) picks up every wall so you can lay them out again.
   Walls you leave unplaced are stored and free to place later.
+- **Move** (bottom right) lets you drag any building to a new spot.
+- You start with one builder; build more Builder's Huts to work on several
+  projects at once.
+- Raiders walk around walls, or break through when the way round is too long.
 - **Spells (Town Hall 4):** build a Spell Factory, brew Lightning, Heal and
   Freeze by day, and cast them at night (tap a spell, then tap the map; keys
   1–3 also work).

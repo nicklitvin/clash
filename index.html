@@ -50,15 +50,16 @@
     <span id="waveText">ENEMIES 0</span>
   </div>
 
-  <!-- one row of actions along the bottom -->
+  <!-- Fight on the left; everything for building on the right -->
   <div class="bottom-left">
     <button class="btn war square" id="defendBtn" aria-label="Start the night"><canvas class="ico" data-icon="moon" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Fight</span></button>
-    <button class="btn go square" id="repairAllBtn" hidden><span class="sq-badge" id="repairAllText">0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Repair</span></button>
-    <button class="btn wood square" id="wallsBtn" hidden aria-label="Rearrange all walls" title="Rearrange all walls"><canvas class="ico" data-icon="wall" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Walls</span></button>
   </div>
 
   <div class="bottom-right">
     <button class="btn round wood" id="speedBtn" hidden aria-label="Game speed">x1</button>
+    <button class="btn go square" id="repairAllBtn" hidden><span class="sq-badge" id="repairAllText">0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Repair</span></button>
+    <button class="btn wood square" id="wallsBtn" hidden aria-label="Rearrange all walls" title="Rearrange all walls"><canvas class="ico" data-icon="wall" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Walls</span></button>
+    <button class="btn wood square" id="moveBtn" hidden aria-label="Move buildings" title="Move buildings"><canvas class="ico" data-icon="move" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Move</span></button>
     <button class="btn square shop" id="shopBtn" aria-label="Shop"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Shop</span></button>
   </div>
 
@@ -67,13 +68,12 @@
     <div class="spells" id="spellBar" hidden aria-label="Spells"></div>
     <div class="place-tip" id="placeTip" hidden></div>
     <div class="place-bar" id="placeBar" hidden>
-      <button class="btn no" id="placeNo" aria-label="Cancel">&#x2716;</button>
-      <button class="btn go" id="placeOk" aria-label="Build">&#x2714;</button>
+      <button class="btn no solid" id="placeNo" aria-label="Cancel"><canvas class="ico" data-icon="cross" width="12" height="12" style="width:24px;height:24px"></canvas></button>
+      <button class="btn go solid" id="placeOk" aria-label="Confirm"><canvas class="ico" data-icon="check" width="12" height="12" style="width:26px;height:26px"></canvas></button>
     </div>
   </div>
 </div>
 
-<div class="banner" id="banner" hidden></div>
 <div class="modal" id="modal" hidden></div>
 <div class="toast ol" id="toast"></div>
 

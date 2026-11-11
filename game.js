@@ -21,21 +21,21 @@ const TYPES = {
     cap: [2000, 4000, 8000, 15000, 25000],
     desc: 'The heart of your village. Upgrade it to unlock more buildings. If it falls, the village is lost.' },
   cannon: { name: 'Cannon', size: 3, cat: 'defense', max: 4,
-    hp: [450, 560, 680, 820], dmg: [12, 16, 21, 27], rate: 0.8, range: 8.5, ground: true, air: false,
+    hp: [450, 560, 680, 820], dmg: [12, 16, 21, 27], rate: 0.8, range: 8.5,
     cost: [[250, 0, 1], [1000, 0, 1], [3000, 0, 1], [8000, 0, 2]],
-    desc: 'Fires heavy shots at ground troops. Cannot hit dragons.' },
+    desc: 'Fires heavy shots at raiders.' },
   archer: { name: 'Archer Tower', size: 3, cat: 'defense', max: 4,
-    hp: [400, 480, 580, 700], dmg: [8, 11, 14, 18], rate: 0.55, range: 10, ground: true, air: true,
+    hp: [400, 480, 580, 700], dmg: [8, 11, 14, 18], rate: 0.55, range: 10,
     cost: [[0, 1000, 1], [0, 2000, 1], [0, 5000, 2], [0, 10000, 2]],
-    desc: 'Long range. Shoots ground troops and dragons.' },
+    desc: 'Long range, quick shots.' },
   mortar: { name: 'Mortar', size: 3, cat: 'defense', max: 3,
-    hp: [400, 480, 580], dmg: [22, 30, 40], rate: 4.5, range: 11, minRange: 4, splash: 1.6, ground: true, air: false,
+    hp: [400, 480, 580], dmg: [22, 30, 40], rate: 4.5, range: 11, minRange: 4, splash: 1.6,
     cost: [[4000, 0, 1], [8000, 0, 2], [16000, 0, 3]],
     desc: 'Lobs exploding shells that hit groups. Has a blind spot up close.' },
-  airdef: { name: 'Air Defense', size: 3, cat: 'defense', max: 3,
-    hp: [600, 700, 820], dmg: [60, 85, 115], rate: 1, range: 10, ground: false, air: true,
+  airdef: { name: 'Rocket Tower', size: 3, cat: 'defense', max: 3,
+    hp: [600, 700, 820], dmg: [60, 85, 115], rate: 2.2, range: 10,
     cost: [[0, 6000, 2], [0, 12000, 2], [0, 24000, 3]],
-    desc: 'Rockets that shred dragons. Ignores ground troops.' },
+    desc: 'Slow, heavy rockets. Great against giants and dragons.' },
   wall: { name: 'Wall', size: 1, cat: 'wall', max: 4,
     hp: [300, 550, 900, 1400],
     cost: [[50, 0, 0], [250, 0, 0], [1000, 0, 0], [2500, 0, 0]],
@@ -71,7 +71,7 @@ const LIMITS = {
   goldstore: [1, 1, 2, 2, 3], elixstore: [1, 1, 2, 2, 3], builder: [3, 3, 4, 4, 5], townhall: [1, 1, 1, 1, 1],
   spellfactory: [0, 0, 0, 1, 1],
 };
-const BUILDER_COSTS = [0, 0, 1000, 3000, 6000]; // price of hut #1..#5
+const BUILDER_COSTS = [0, 750, 1500, 3000, 6000]; // price of hut #1..#5 (you start with one)
 const SHOP_TABS = [
   ['defense', 'DEFENSE', ['cannon', 'archer', 'mortar', 'airdef', 'wall']],
   ['resource', 'RESOURCES', ['goldmine', 'elixir', 'goldstore', 'elixstore', 'builder']],
@@ -84,12 +84,25 @@ const UNITS = {
   goblin: { name: 'Goblin', hp: 28, dmg: 11, rate: 1, range: 0.6, speed: 2.6, space: 1, sprite: 'gob', pref: 'resource' },
   giant: { name: 'Giant', hp: 330, dmg: 14, rate: 1.6, range: 0.8, speed: 1.0, space: 5, sprite: 'giant', pref: 'defense' },
   breaker: { name: 'Wall Breaker', hp: 22, dmg: 650, rate: 1, range: 0.5, speed: 2.4, space: 2, sprite: 'wb', pref: 'wall', bomb: true },
-  dragon: { name: 'Dragon', hp: 1000, dmg: 55, rate: 1.4, range: 2.4, speed: 1.15, space: 20, sprite: 'drag', air: true, splash: 1.1 },
+  dragon: { name: 'Dragon', hp: 1000, dmg: 55, rate: 1.4, range: 2.4, speed: 1.15, space: 20, sprite: 'drag', ranged: true, fire: true, splash: 1.1 },
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '0.7.0';
+const GAME_VERSION = '0.8.0';
 const PATCH_NOTES = [
+  { v: '0.8.0', date: 'Nov 11, 2026', notes: [
+    'Building info now uses round gauges for health, level, damage, range, output and storage, with the next-level value underneath.',
+    'New Move button: drag any building to a new spot, then confirm. The Move button on each building is gone.',
+    'Buildings under construction or upgrading show their progress as a ring in the middle of the icon.',
+    'You now start with one builder. Extra Builder\'s Huts cost 750, 1,500, 3,000 and 6,000.',
+    'Fight sits alone on the left; Repair, Walls, Move and Shop are together on the right.',
+    'The end-of-night window just shows resources earned and what finished building or upgrading.',
+    'No more big DAY / NIGHT banners.',
+    'Raiders now respect walls: they walk around them, or stop and break through when going around is too far. Anything else in the way gets smashed too.',
+    'No more flying units. Dragons walk, and the Air Defense is now a Rocket Tower that hits every raider.',
+    'Less text in the building panel. Buttons you cannot use yet look disabled; tap one to see why.',
+    'The confirm and cancel buttons are bright and solid.',
+  ] },
   { v: '0.7.0', date: 'Nov 10, 2026', notes: [
     'Neon is now the only look: glowing outlines on a dark grid. The other themes and the Theme button are gone.',
     'New fonts: Inter for everything you read, Exo 2 for headings. Much easier to read.',
@@ -192,7 +205,6 @@ function newGame() {
   add('goldmine', 13, 8, 1);
   add('elixir', 8, 9, 1);
   add('builder', 19, 18, 1);
-  add('builder', 9, 19, 1);
   for (let i = 0; i < 6; i++) add('wall', 12 + i, 18, 1);
   save();
 }
@@ -256,7 +268,7 @@ function canAfford(p) { return S.gold >= p[0] && S.elixir >= p[1]; }
 
 function save() {
   if (!S) return;
-  if (placing && placing.rearrange) return;   // walls are lifted off the map while rearranging; never save that state
+  if (placing && (placing.rearrange || placing.arrange)) return;   // mid-rearrange layouts are only saved once confirmed
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ }
 }
 function load() {
@@ -307,7 +319,8 @@ function distToRect(px, py, b) {
   const dy = Math.max(b.y - py, 0, py - (b.y + s));
   return Math.hypot(dx, dy);
 }
-const WALL_COST = 9;
+const WALL_COST = 9;       // raiders walk around walls unless that is much longer; then they break through
+const BUILDING_COST = 40;  // other buildings in the way are broken only when there is no other route
 function getField(b, range) {
   const key = b.id + ':' + range;
   const hit = fieldCache.get(key);
@@ -342,7 +355,8 @@ function getField(b, range) {
     const id = blocked[i];
     if (!id) return 1;
     const o = byId(id);
-    return o && o.type === 'wall' ? WALL_COST : Infinity;
+    if (!o) return 1;
+    return o.type === 'wall' ? WALL_COST : o === b ? Infinity : BUILDING_COST;
   };
   while (heap.length) {
     const [d, i] = pop();
@@ -422,14 +436,13 @@ function startRaid() {
   });
   spawnQueue.sort((a, b) => a.at - b.at);
   sfx('horn');
-  banner(`NIGHT ${S.day}`, 'Defend your village!', 'night');
   refreshUI();
 }
 function spawnUnit(q) {
   const d = UNITS[q.type];
   const hpMul = 1 + Math.max(0, S.day - 8) * 0.06;
   units.push({ type: q.type, d, x: q.x, y: q.y, hp: d.hp * hpMul, maxhp: d.hp * hpMul, target: null, wall: null,
-    next: null, cd: rnd(0, 0.4), dir: 1, walk: Math.random() * 6, flash: 0, ox: rnd(-0.25, 0.25), oy: rnd(-0.25, 0.25), z: d.air ? 10 : 0 });
+    next: null, cd: rnd(0, 0.4), dir: 1, walk: Math.random() * 6, flash: 0, ox: rnd(-0.15, 0.15), oy: rnd(-0.15, 0.15), z: 0 });
 }
 function endRaid(victory) {
   if (S.phase !== 'raid') return;
@@ -463,46 +476,48 @@ function nightIncome() {
   }
   return r;
 }
+// end of night: the builders finish their work and the mines pay out; show just that
 function showNightSummary() {
-  $('banner').hidden = true; clearTimeout(toastTimer); $('toast').classList.remove('show');
+  clearTimeout(toastTimer); $('toast').classList.remove('show');
   const r = nightIncome();
   const before = { g: S.gold, e: S.elixir };
   gain('gold', r.mineGold); gain('elixir', r.pumpElixir);
-  const gotG = S.gold - before.g, gotE = S.elixir - before.e;
-  const lostG = r.mineGold - gotG, lostE = r.pumpElixir - gotE;
-  const stolen = raidStats.stolenGold + raidStats.stolenElixir;
-  const hurt = damaged().length;
-  const row = (ico, label, val, cls) => `<div class="sum-row ${cls || ''}"><span data-ico="${ico}" data-px="18"></span><span class="sum-label">${label}</span><b>${val}</b></div>`;
+  const done = [];
+  for (const b of S.buildings) {
+    if (!b.cons) continue;
+    b.cons.days -= 1;
+    if (b.cons.days <= 0) {   // a finished project comes back brand new
+      const isNew = b.lvl < 1;
+      b.lvl = b.cons.to; b.cons = null; b.destroyed = false; b.hp = maxHp(b);
+      done.push({ b, isNew });
+    }
+  }
+  if (done.length) rebuildBlocked();
+  const row = (ico, label, val) => `<div class="sum-row"><span data-ico="${ico}" data-px="18"></span><span class="sum-label">${label}</span><b>${val}</b></div>`;
+  const merged = new Map();   // "Wall built x3" instead of three rows
+  for (const { b, isNew } of done) {
+    const key = def(b).name + (isNew ? ' built' : ` → Lv ${b.lvl}`);
+    merged.set(key, (merged.get(key) || 0) + 1);
+  }
+  const doneRows = [...merged].map(([k, n]) => `<div class="sum-row"><span data-ico="hammer" data-px="18"></span><span class="sum-label">${k}</span><b>${n > 1 ? '×' + n : '✔'}</b></div>`).join('');
   popup(`NIGHT ${S.day} SURVIVED`, `
-    <p>You held off ${raidStats.total} raiders. Here is what your village earned:</p>
     <div class="summary">
-      ${row('gold', `${TYPES.goldmine.name}s (${r.mines})`, '+' + fmt(r.mineGold))}
-      ${row('elixir', `${TYPES.elixir.name}s (${r.pumps})`, '+' + fmt(r.pumpElixir))}
-      ${stolen ? row('sword', 'Goblins stole', '-' + fmt(stolen), 'bad') : ''}
-      ${lostG + lostE > 0 ? row('clock', 'Storage full, lost', fmt(lostG + lostE), 'bad') : ''}
-      ${r.idle ? `<div class="sum-note">${r.idle} mine${r.idle > 1 ? 's or collectors were' : ' or collector was'} broken or upgrading and earned nothing.</div>` : ''}
-      ${hurt ? `<div class="sum-note">${hurt} building${hurt > 1 ? 's need' : ' needs'} repair.</div>` : ''}
-    </div>`, [[`START DAY ${S.day + 1}`, 'go', () => { closeModal(); startBuild(); }]]);
+      ${row('gold', resName('gold'), '+' + fmt(S.gold - before.g))}
+      ${row('elixir', resName('elixir'), '+' + fmt(S.elixir - before.e))}
+      ${doneRows}
+    </div>`, [[`Start day ${S.day + 1}`, 'go', () => { closeModal(); startBuild(); }]]);
 }
 function startBuild() {
   S.day++;
   S.phase = 'build';
   units = []; shots = []; texts = []; spawnQueue = []; flags = [];
-  const done = [];
   for (const b of S.buildings) {
-    if (b.cons) {
-      b.cons.days -= 1;
-      // a finished project comes back brand new
-      if (b.cons.days <= 0) { b.lvl = b.cons.to; b.cons = null; b.destroyed = false; b.hp = maxHp(b); done.push(b); }
-    }
     b.hp = Math.min(b.hp, maxHp(b));
     b.cd = 0; b.flash = 0; b.target = null;
   }
   rebuildBlocked();
   save();
   refreshUI();
-  banner(`DAY ${S.day}`, 'Build and upgrade', 'day');
-  if (done.length) toast(done.length === 1 ? `${def(done[0]).name} is ready! (level ${done[0].lvl})` : `${done.length} projects finished!`, 3000);
 }
 
 // ---------- simulation ----------
@@ -589,37 +604,37 @@ function updateUnit(u, dt) {
     else { attack(u, u.wall); return; }
   }
   const range = d.range;
-  if (distToRect(u.x, u.y, u.target) <= range + 0.15) { attack(u, u.target); return; }
-  let tx, ty;
-  if (d.air) {
-    const c = center(u.target); tx = c.x; ty = c.y;
-  } else {
-    if (!u.next || Math.hypot(u.next.x - u.x, u.next.y - u.y) < 0.12) {
-      const f = getField(u.target, range);
-      const cx = Math.floor(u.x), cy = Math.floor(u.y);
-      let best = null, bd = inField(cx, cy) ? f.dist[cellIndex(cx, cy)] : Infinity;
-      for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
-        if (!ox && !oy) continue;
-        const nx = cx + ox, ny = cy + oy;
-        if (!inField(nx, ny)) continue;
-        if (ox && oy && (blocked[cellIndex(cx + ox, cy)] || blocked[cellIndex(cx, cy + oy)])) continue;
-        const v = f.dist[cellIndex(nx, ny)];
-        if (v < bd - 0.01) { bd = v; best = { x: nx, y: ny }; }
-      }
-      if (!best) {
-        // already on a goal cell (or stuck): walk straight at the target
-        const c = center(u.target); u.next = { x: c.x, y: c.y };
-      } else {
-        const occ = blocked[cellIndex(best.x, best.y)];
-        if (occ) {
-          const w = byId(occ);
-          if (w && w.type === 'wall') { u.wall = w; return; }
-        }
-        u.next = { x: best.x + 0.5 + u.ox, y: best.y + 0.5 + u.oy };
-      }
+  // close enough to hit (matches the goal cells of the path field, so no one walks over anything)
+  if (distToRect(u.x, u.y, u.target) <= range + 0.45) { attack(u, u.target); return; }
+  if (!u.next || Math.hypot(u.next.x - u.x, u.next.y - u.y) < 0.12) {
+    const f = getField(u.target, range);
+    const cx = Math.floor(u.x), cy = Math.floor(u.y);
+    let best = null, bd = inField(cx, cy) ? f.dist[cellIndex(cx, cy)] : Infinity;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      const nx = cx + ox, ny = cy + oy;
+      if (!inField(nx, ny)) continue;
+      if (ox && oy && (blocked[cellIndex(cx + ox, cy)] || blocked[cellIndex(cx, cy + oy)])) continue;   // no squeezing past corners
+      const v = f.dist[cellIndex(nx, ny)];
+      if (v < bd - 0.01) { bd = v; best = { x: nx, y: ny }; }
     }
-    tx = u.next.x; ty = u.next.y;
+    if (!best) {
+      // nowhere better to step: break the nearest building touching us, if any; otherwise step to the cell centre
+      let nb = null, nd = Infinity;
+      for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const id = inField(cx + ox, cy + oy) && blocked[cellIndex(cx + ox, cy + oy)];
+        const o = id && byId(id);
+        if (o && !o.destroyed) { const dd = distToRect(u.x, u.y, o); if (dd < nd) { nd = dd; nb = o; } }
+      }
+      if (nb) { u.wall = nb; return; }
+      u.next = { x: cx + 0.5, y: cy + 0.5 };
+    } else {
+      const occ = blocked[cellIndex(best.x, best.y)];
+      if (occ) { const o = byId(occ); if (o && !o.destroyed) { u.wall = o; return; } }   // a wall (or building) is in the way: break it
+      u.next = { x: best.x + 0.5 + u.ox, y: best.y + 0.5 + u.oy };
+    }
   }
+  const tx = u.next.x, ty = u.next.y;
   const dx = tx - u.x, dy = ty - u.y, len = Math.hypot(dx, dy) || 1;
   const v = d.speed * dt;
   u.x += (dx / len) * Math.min(v, len);
@@ -650,8 +665,8 @@ function attack(u, b) {
     return;
   }
   let dmg = d.dmg;
-  if (d.ranged || d.air) {
-    shots.push({ kind: d.air ? 'fire' : 'enemyArrow', x: u.x, y: u.y, z: u.z + 4, tx: c.x + rnd(-0.4, 0.4), ty: c.y + rnd(-0.4, 0.4), b, dmg, from: u, speed: d.air ? 7 : 11, splash: d.splash || 0 });
+  if (d.ranged) {
+    shots.push({ kind: d.fire ? 'fire' : 'enemyArrow', x: u.x, y: u.y, z: 4, tx: c.x + rnd(-0.4, 0.4), ty: c.y + rnd(-0.4, 0.4), b, dmg, from: u, speed: d.fire ? 7 : 11, splash: d.splash || 0 });
   } else {
     if (u.type === 'goblin' && (def(b).cat === 'resource' || b.type === 'townhall')) dmg *= 2;
     hurtBuilding(b, dmg, u);
@@ -664,7 +679,7 @@ function updateDefense(b, dt) {
   const t = def(b), lvl = b.lvl;
   b.cd -= dt;
   const c = center(b);
-  const valid = (u) => u && u.hp > 0 && (u.d.air ? t.air : t.ground) && (() => {
+  const valid = (u) => u && u.hp > 0 && (() => {
     const dd = Math.hypot(u.x - c.x, u.y - c.y);
     return dd <= t.range && (!t.minRange || dd >= t.minRange);
   })();
@@ -974,10 +989,11 @@ function drawBuilding(b, cx, cy, opts) {
     if (sel) rrect(cx - half, cy - half, half * 2, half * 2, 3, 'rgba(255,255,255,0.08)');
     g.restore(); return;
   }
-  if (b.lvl < 1) {   // being built
-    g.setLineDash([2, 3]); rrect(cx - half, cy - half, half * 2, half * 2, 3, sel ? 'rgba(255,255,255,0.08)' : null, col, 1); g.setLineDash([]);
-    g.globalAlpha = 0.45; buildingIcon(b, cx, cy, half, col, 1.1); g.globalAlpha = 1;
-    if (b.cons) drawUpgradeBadge(cx, cy - half, b);
+  if (b.cons && !opts.preview) {   // being built or upgraded: dimmed icon with a progress ring in the middle
+    if (b.lvl < 1) { g.setLineDash([2, 3]); rrect(cx - half, cy - half, half * 2, half * 2, 3, sel ? 'rgba(255,255,255,0.08)' : null, col, 1); g.setLineDash([]); }
+    else glow(col, sel ? 18 : 6, () => rrect(cx - half, cy - half, half * 2, half * 2, 3, sel ? hexA(col, 0.16) : 'rgba(255,255,255,0.025)', col, sel ? 2 : 1.2));
+    g.globalAlpha = 0.28; buildingIcon(b, cx, cy, half, col, 1.1); g.globalAlpha = 1;
+    drawProgressRing(cx, cy, Math.min(11, half * 0.62), consProgress(b), b.cons.days + 'd');
     g.restore(); return;
   }
   const blur = sel ? 18 : 8;
@@ -991,8 +1007,20 @@ function drawBuilding(b, cx, cy, opts) {
     rect(cx - bw / 2, by, bw, 1.6, 'rgba(255,255,255,0.12)');
     glow(hpColor(f), 6, () => rect(cx - bw / 2, by, bw * f, 1.6, hpColor(f)));
   }
-  if (b.cons) drawUpgradeBadge(cx, cy - half, b);
   g.restore();
+}
+// how far along a building project is (0..1)
+function consProgress(b) {
+  if (!b.cons) return 1;
+  const total = b.cons.total || (TYPES[b.type].cost[b.cons.to - 1] || [0, 0, 1])[2] || 1;
+  return clamp(1 - b.cons.days / total, 0, 1);
+}
+function drawProgressRing(cx, cy, r, f, label) {
+  disc(cx, cy, r + 1.5, 'rgba(7,7,15,0.85)');
+  g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.strokeStyle = 'rgba(255,210,63,0.22)'; g.lineWidth = 2.2; g.stroke();
+  if (f > 0) glow('#ffd23f', 8, () => { g.beginPath(); g.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + TAU * f); g.strokeStyle = '#ffd23f'; g.lineWidth = 2.2; g.lineCap = 'round'; g.stroke(); });
+  g.font = `700 ${Math.max(6, r * 0.75)}px ${FONT_STACK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffd23f';
+  g.fillText(label, cx, cy + 0.5);
 }
 function hexA(hex, a) { const p = (i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16); return `rgba(${p(0)},${p(1)},${p(2)},${a})`; }
 function drawWall(b, cx, cy, col, opts) {
@@ -1083,12 +1111,6 @@ function buildingIcon(b, cx, cy, half, col, lw) {
   }
   g.restore();
 }
-function drawUpgradeBadge(cx, top, b) {
-  const label = b.cons.days + 'd', y = top - 9, w = 18;
-  glow('#ffd23f', 6, () => rrect(cx - w / 2, y, w, 8, 4, '#1a1400', '#ffd23f', 1));
-  g.font = `700 6.5px ${FONT_STACK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffd23f';
-  g.fillText(label, cx, y + 4.3);
-}
 function drawHpBar(cx, y, w, frac) {
   rect(cx - w / 2, y, w, 1.6, 'rgba(255,255,255,0.15)');
   rect(cx - w / 2, y, w * clamp(frac, 0, 1), 1.6, hpColor(frac));
@@ -1147,9 +1169,10 @@ function render(now) {
     const s = TYPES[p.type].size;
     sq(sx(p.x + s / 2), sy(0, p.y + s / 2), s, p.ok ? 'rgba(61,255,168,0.18)' : 'rgba(255,59,92,0.25)');
   }
+  const hi = placing && placing.arrange ? byId(placing.sel) : !placing ? sel : null;
   for (const b of S.buildings) {
     if (placing && placing.moveId === b.id) continue;
-    drawBuildingAt(b, sel === b && !placing);
+    drawBuildingAt(b, hi === b);
   }
   for (const p of placingSpots()) {
     const s = TYPES[p.type].size;
@@ -1331,14 +1354,17 @@ canvas.addEventListener('pointerdown', (e) => {
     drag = null; return;
   }
   const t = screenToTile(e.clientX, e.clientY);
-  let mode = 'pan';
-  if (placing && placing.multi) {
+  let mode = 'pan', grab = null;
+  if (placing && placing.arrange) {
+    grab = buildingAt(t.x, t.y);
+    if (grab) { mode = 'arrange'; placing.sel = grab.id; }
+  } else if (placing && placing.multi) {
     if (pendingAt(Math.floor(t.x), Math.floor(t.y)) >= 0) { mode = 'paint'; placing.paintFrom = [Math.floor(t.x), Math.floor(t.y)]; placing.warned = false; }
   } else if (placing) {
     const s = TYPES[placing.type].size;
     if (t.x >= placing.x - 0.5 && t.x < placing.x + s + 0.5 && t.y >= placing.y - 0.5 && t.y < placing.y + s + 0.5) mode = 'ghost';
   }
-  drag = { mode, sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, moved: false, gx: placing ? placing.x : 0, gy: placing ? placing.y : 0, tx: t.x, ty: t.y };
+  drag = { mode, grab, bx: grab ? grab.x : 0, by: grab ? grab.y : 0, sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, moved: false, gx: placing ? placing.x : 0, gy: placing ? placing.y : 0, tx: t.x, ty: t.y };
   canvas.classList.add('dragging');
 });
 canvas.addEventListener('pointermove', (e) => {
@@ -1355,7 +1381,12 @@ canvas.addEventListener('pointermove', (e) => {
   if (!drag) return;
   const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
   if (Math.hypot(dx, dy) > 6) drag.moved = true;
-  if (drag.mode === 'paint') {
+  if (drag.mode === 'arrange') {
+    const t = screenToTile(e.clientX, e.clientY), b = drag.grab, sz = def(b).size;
+    const nx = clamp(Math.round(drag.bx + (t.x - drag.tx)), 0, GRID - sz), ny = clamp(Math.round(drag.by + (t.y - drag.ty)), 0, GRID - sz);
+    if (fits(b.type, nx, ny, b.id)) { if (b.x !== nx || b.y !== ny) { b.x = nx; b.y = ny; rebuildBlocked(); } placing.bad = null; }
+    else placing.bad = { type: b.type, x: nx, y: ny, lvl: b.lvl };
+  } else if (drag.mode === 'paint') {
     const t = screenToTile(e.clientX, e.clientY);
     paintWallsTo(clamp(Math.floor(t.x), 0, GRID - 1), clamp(Math.floor(t.y), 0, GRID - 1));
   } else if (drag.mode === 'ghost') {
@@ -1374,10 +1405,12 @@ const endPointer = (e) => {
   if (!drag) return;
   const d = drag; drag = null;
   canvas.classList.remove('dragging');
+  if (placing && placing.arrange) placing.bad = null;
   if (d.moved || e.type === 'pointercancel') return;
   // a tap
   const t = screenToTile(e.clientX, e.clientY);
   if (spellArmed && S.phase === 'raid') { castSpell(spellArmed, t.x, t.y); return; }
+  if (placing && placing.arrange) return;   // a tap just picks the building (done on press)
   if (placing && placing.multi) {
     const x = Math.floor(t.x), y = Math.floor(t.y), i = pendingAt(x, y);
     if (i >= 0) placing.walls.splice(i, 1); else addPendingWall(x, y);
@@ -1422,7 +1455,7 @@ function zoomBy(d) { const z = zoomLevels(); setScale(z[clamp(z.indexOf(nearestZ
    ===================================================================== */
 // HUD icons: small neon line drawings on a 24x24 grid (drawn at 2x for sharpness)
 const ICON_COL = { sword: '#ff3b5c', sun: '#ffd23f', moon: '#c8c8ff', hammer: '#e0e0ff', shop: '#35f0ff', shield: '#35f0ff',
-  clock: '#e0e0ff', wall: '#7d7dff', bolt: '#a8e0ff', snow: '#7cd8f8', heart: '#3dffa8', stats: '#35f0ff' };
+  clock: '#e0e0ff', wall: '#7d7dff', move: '#c8c8ff', check: '#07070f', cross: '#07070f', bolt: '#a8e0ff', snow: '#7cd8f8', heart: '#3dffa8', stats: '#35f0ff' };
 function drawIcon(c, name) {
   c.width = 48; c.height = 48; c.dataset.icon = name;
   const prev = g; g = c.getContext('2d'); g.scale(2, 2);
@@ -1443,6 +1476,9 @@ function drawIcon(c, name) {
       case 'bolt': poly([[14, 2], [6, 13], [11, 13], [9, 22], [18, 10], [13, 10]], null, col, L); break;
       case 'snow': for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; line(12 - Math.cos(a) * 9, 12 - Math.sin(a) * 9, 12 + Math.cos(a) * 9, 12 + Math.sin(a) * 9, col, L); } break;
       case 'heart': g.beginPath(); g.moveTo(12, 20); g.bezierCurveTo(2, 13, 4, 4, 12, 8); g.bezierCurveTo(20, 4, 22, 13, 12, 20); g.strokeStyle = col; g.lineWidth = L; g.stroke(); break;
+      case 'move': line(12, 3, 12, 21, col, L); line(3, 12, 21, 12, col, L); for (const [a, b2, c2, d2] of [[12, 3, 9, 6], [12, 3, 15, 6], [12, 21, 9, 18], [12, 21, 15, 18], [3, 12, 6, 9], [3, 12, 6, 15], [21, 12, 18, 9], [21, 12, 18, 15]]) line(a, b2, c2, d2, col, L); break;
+      case 'check': poly([[5, 12], [10, 17], [19, 6]], null, col, 2.6, true); break;
+      case 'cross': line(6, 6, 18, 18, col, 2.6); line(18, 6, 6, 18, col, 2.6); break;
       case 'stats': line(5, 19, 19, 19, col, L); line(7, 19, 7, 12, col, 2.6); line(12, 19, 12, 6, col, 2.6); line(17, 19, 17, 10, col, 2.6); break;
     }
   });
@@ -1467,15 +1503,6 @@ function hydrateCosts(root) {
 }
 const daysLabel = (d) => (d === 0 ? 'Instant' : d === 1 ? '1 day' : d + ' days');
 
-let bannerTimer = 0;
-function banner(title, sub, kind) {
-  const el = $('banner');
-  el.className = 'banner ' + kind;
-  el.innerHTML = `<div class="banner-title ol">${title}</div><div class="banner-sub ol">${sub}</div>`;
-  el.hidden = false;
-  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
-  clearTimeout(bannerTimer); bannerTimer = setTimeout(() => { el.hidden = true; }, 1900);
-}
 let toastTimer = 0;
 function toast(msg, ms) {
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
@@ -1502,6 +1529,7 @@ function refreshUI() {
   }
   $('shopBtn').hidden = !building || !!placing;
   $('wallsBtn').hidden = !building || !!placing || !wallTotal();
+  $('moveBtn').hidden = !building || !!placing;
   $('defendBtn').hidden = !building || !!placing;
   $('defendBtn').title = `Start night ${S.day}: the raid begins`;
   $('wave').hidden = S.phase !== 'raid';
@@ -1662,73 +1690,83 @@ function updateRepairAll() {
 let selKey = '';
 function select(id) { selectedId = id; renderSel(true); }
 function deselect() { selectedId = null; selKey = ''; $('sel').hidden = true; }
+// a circular gauge: value in the middle, label underneath, optional next-level value
+const RING_C = 2 * Math.PI * 20;
+const short = (n) => (n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : fmt(n));
+function ringHTML(live, f, col, val, label, next) {
+  f = clamp(f, 0, 1);
+  return `<div class="ring" ${live ? `data-live="${live}"` : ''} style="--rc:${col}">
+    <svg viewBox="0 0 48 48" aria-hidden="true"><circle class="ring-bg" cx="24" cy="24" r="20"/><circle class="ring-fg" cx="24" cy="24" r="20" stroke-dasharray="${RING_C * f} ${RING_C}"/></svg>
+    <div class="ring-val">${val}</div><div class="ring-label">${label}</div>${next ? `<div class="ring-next">▲ ${next}</div>` : ''}</div>`;
+}
+function setRing(el, f, val, col) {
+  const fg = el.querySelector('.ring-fg'); fg.setAttribute('stroke-dasharray', `${RING_C * clamp(f, 0, 1)} ${RING_C}`);
+  el.querySelector('.ring-val').textContent = val;
+  if (col) el.style.setProperty('--rc', col);
+}
+// why an upgrade can't start right now (empty string = it can)
+function upgradeBlock(b) {
+  const t = def(b), next = b.lvl + 1, p = t.cost[next - 1];
+  if (next > levelCap(b.type)) return `Needs Town Hall ${b.type === 'wall' ? next : next - 1}`;
+  if (S.phase !== 'build') return 'Upgrades start during the day';
+  if (b.destroyed) return 'Repair it first';
+  if (!canAfford(p)) return `Not enough ${resName(S.gold < p[0] ? 'gold' : 'elixir').toLowerCase()}`;
+  if (p[2] > 0 && builders().free <= 0) return 'All builders are busy';
+  return '';
+}
 function renderSel(force) {
   const b = byId(selectedId);
   const el = $('sel');
   if (!b) { deselect(); return; }
   const isFactory = b.type === 'spellfactory';
-  const key = [b.id, b.lvl, b.cons ? b.cons.days : '-', b.destroyed, S.phase, missingHp(b) > 0, isFactory ? JSON.stringify(S.spells) : ''].join('|');
+  const key = [b.id, b.lvl, b.cons ? b.cons.days : '-', b.destroyed, S.phase, missingHp(b) > 0, isFactory ? JSON.stringify(S.spells) : '', b.lvl >= 1 && !b.cons && b.lvl < def(b).max ? upgradeBlock(b) : ''].join('|');
   if (!force && key === selKey && !el.hidden) { updateSelLive(b); return; }
   selKey = key;
-  const t = def(b), lvl = b.lvl;
-  const building = S.phase === 'build';
-  const shownLvl = Math.max(1, lvl);
-  const chips = [];
-  if (t.dmg) chips.push(`Damage <b>${t.dmg[shownLvl - 1]}</b>`, `Range <b>${t.range}</b>`, `<b>${t.air && t.ground ? 'Ground + air' : t.air ? 'Air only' : 'Ground only'}</b>`);
-  if (t.prod) chips.push(`Makes <b>${fmt(t.prod[shownLvl - 1])}</b>/night`);
-  if (t.store && lvl >= 1) chips.push(`<span data-ico="${t.res}" data-px="14"></span><b data-stored="${t.res}"></b> / ${fmt(t.store[lvl - 1])}`);
-  if (t.cap) chips.push(`<span data-ico="gold" data-px="14"></span><b data-stored="gold"></b> / ${fmt(t.cap[shownLvl - 1])}`, `<span data-ico="elixir" data-px="14"></span><b data-stored="elixir"></b> / ${fmt(t.cap[shownLvl - 1])}`);
-  if (t.cap) chips.push('Fills first');
-  if (t.slots) chips.push(`Spells <b>${spellsStored()}/${spellSlots() || t.slots[0]}</b>`);
-  let status = '';
-  if (b.cons) status = lvl < 1 ? `Being built: ready in ${daysLabel(b.cons.days)}.` : `Upgrading to level ${b.cons.to}: ready in ${daysLabel(b.cons.days)}. It won't work until then.`;
-  else if (b.destroyed) status = 'Destroyed. It does nothing until you repair it.';
-  else if (missingHp(b) > 0) status = `Damaged. Repair it with ${resName('gold').toLowerCase()}.`;
-  const next = lvl + 1;
-  let nextInfo = '';
-  if (lvl >= 1 && !b.cons && next <= t.max && t.cost[next - 1]) {
-    const bits = [`HP ${fmt(t.hp[next - 1])}`];
-    if (t.dmg) bits.push(`Damage ${t.dmg[next - 1]}`);
-    if (t.prod) bits.push(`Makes ${fmt(t.prod[next - 1])}`);
-    if (t.store) bits.push(`Holds ${fmt(t.store[next - 1])}`);
-    if (t.cap) bits.push(`Holds ${fmt(t.cap[next - 1])} each`);
-    if (t.slots) bits.push(`${t.slots[next - 1]} spells`);
-    nextInfo = `<div class="next-lvl">Next level: ${bits.join(' · ')}</div>`;
+  const t = def(b), lvl = b.lvl, building = S.phase === 'build';
+  const L = Math.max(1, lvl), next = lvl + 1;
+  const canUp = lvl >= 1 && !b.cons && next <= t.max && t.cost[next - 1];
+  const nx = (arr) => (canUp && arr ? arr[next - 1] : null);
+  const rings = [];
+  if (b.cons) rings.push(ringHTML('', consProgress(b), '#ffd23f', `${b.cons.days}d`, lvl < 1 ? 'Building' : `To Lv ${b.cons.to}`));
+  if (lvl >= 1) {
+    rings.push(ringHTML('hp', 1, '#3dffa8', '', 'Health', nx(t.hp) && short(nx(t.hp))));
+    rings.push(ringHTML('', L / t.max, '#ffd23f', `${L}/${t.max}`, 'Level'));
+    if (t.dmg) {
+      rings.push(ringHTML('', t.dmg[L - 1] / t.dmg[t.max - 1], '#35f0ff', t.dmg[L - 1], 'Damage', nx(t.dmg)));
+      rings.push(ringHTML('', t.range / 12, '#35f0ff', t.range, 'Range'));
+    }
+    if (t.prod) rings.push(ringHTML('', t.prod[L - 1] / t.prod[t.max - 1], resCol(t.res), short(t.prod[L - 1]), 'Per night', nx(t.prod) && short(nx(t.prod))));
+    if (t.store) rings.push(ringHTML('store-' + t.res, 0, resCol(t.res), '', 'Stored', nx(t.store) && short(nx(t.store))));
+    if (t.cap) for (const r of ['gold', 'elixir']) rings.push(ringHTML('store-' + r, 0, resCol(r), '', resName(r), nx(t.cap) && short(nx(t.cap))));
+    if (b.type === 'builder') { const bl = builders(); rings.push(ringHTML('', bl.total ? bl.free / bl.total : 0, '#c8c8e8', `${bl.free}/${bl.total}`, 'Free')); }
+    if (t.slots) rings.push(ringHTML('', spellSlots() ? spellsStored() / spellSlots() : 0, '#ff8a3d', `${spellsStored()}/${spellSlots()}`, 'Spells', nx(t.slots)));
   }
   // Spell Factory: brew by day
   let brewHTML = '';
-  if (isFactory && lvl >= 1) {
-    const rows = Object.entries(SPELLS).map(([type, sp]) => {
-      const locked = b.lvl < sp.lvl;
-      const btn = !building ? '' : locked ? `<button class="btn mini" disabled>Level ${sp.lvl}</button>`
-        : `<button class="btn mini go" data-brew="${type}">Brew <span class="cost" data-cost="elixir">${fmt(sp.cost)}</span></button>`;
-      return `<div class="brew-row" title="${sp.desc}"><span data-ico="${sp.icon}" data-px="16"></span><span class="brew-name">${sp.name}</span><b>x${S.spells[type] || 0}</b>${btn}</div>`;
-    }).join('');
-    brewHTML = `<div class="brew">${rows}${building ? '' : '<div class="tiny">Spells are brewed during the day.</div>'}</div>`;
+  if (isFactory && lvl >= 1 && !b.cons) {
+    brewHTML = `<div class="brew">${Object.entries(SPELLS).map(([type, sp]) => {
+      const why = !building ? 'Spells are brewed during the day' : b.lvl < sp.lvl ? `Needs Spell Factory level ${sp.lvl}` : spellsStored() >= spellSlots() ? 'The Spell Factory is full' : S.elixir < sp.cost ? `Not enough ${resName('elixir').toLowerCase()}` : '';
+      return `<div class="brew-row" title="${sp.desc}"><span data-ico="${sp.icon}" data-px="16"></span><span class="brew-name">${sp.name}</span><b>×${S.spells[type] || 0}</b>
+        <button class="btn mini go${why ? ' is-disabled' : ''}" ${why ? `data-why="${why}"` : `data-brew="${type}"`}>Brew <span class="cost" data-cost="elixir">${fmt(sp.cost)}</span></button></div>`;
+    }).join('')}</div>`;
   }
   const actions = [];
-  if (missingHp(b) > 0) actions.push(`<button class="btn mini go" id="repairBtn">Repair <span class="cost" data-cost="gold" id="repairCost">${fmt(repairCost(b))}</span></button>`);
-  if (!b.cons && lvl >= 1) {
-    if (next <= t.max && t.cost[next - 1]) {
-      const p = t.cost[next - 1];
-      if (next > levelCap(b.type)) actions.push(`<button class="btn mini" disabled>Upgrade: Town Hall ${b.type === 'wall' ? next : next - 1}</button>`);
-      else if (!building) actions.push(`<button class="btn mini" disabled>Upgrade by day · ${costHTML(p)}</button>`);
-      else if (b.destroyed) actions.push(`<button class="btn mini" disabled>Repair first</button>`);
-      else actions.push(`<button class="btn mini go" id="upBtn">Upgrade ${costHTML(p)} · ${daysLabel(p[2])}</button>`);
-    } else if (t.max > 1) actions.push('<button class="btn mini" disabled>Max level</button>');
+  if (missingHp(b) > 0 && !b.cons) {
+    const c = repairCost(b);
+    actions.push(`<button class="btn mini go${S.gold < c ? ' is-disabled' : ''}" id="repairBtn" ${S.gold < c ? `data-why="Not enough ${resName('gold').toLowerCase()}"` : ''}>Repair <span class="cost" data-cost="gold" id="repairCost">${fmt(c)}</span></button>`);
   }
-  if (building && b.type !== 'townhall') actions.push('<button class="btn mini wood" id="moveBtn">Move</button>');
-  if (building && b.type === 'wall' && !b.cons) actions.push('<button class="btn mini no" id="sellBtn">Remove</button>', '<button class="btn mini wood" id="rearrangeBtn">Rearrange all walls</button>');
+  if (canUp) {
+    const p = t.cost[next - 1], why = upgradeBlock(b);
+    actions.push(`<button class="btn mini go${why ? ' is-disabled' : ''}" ${why ? `data-why="${why}"` : 'id="upBtn"'}>Upgrade ${costHTML(p)} · ${daysLabel(p[2])}</button>`);
+  } else if (lvl >= 1 && !b.cons && t.max > 1) actions.push('<button class="btn mini is-disabled" data-why="This building is at its highest level">Max level</button>');
+  if (building && b.type === 'wall' && !b.cons) actions.push('<button class="btn mini no" id="sellBtn">Remove</button>');
   el.innerHTML = `
     <div class="sel-head">
-      <div class="sel-name ol" title="${t.desc}">${t.name}${lvl >= 1 ? ` <span class="lvl">Lv ${lvl}</span>` : ''}</div>
-      <div class="hpbar"><i id="selBar"></i><span id="selHp"></span></div>
+      <div class="sel-name" title="${t.desc}">${t.name}</div>
       <button class="btn no close-x" id="selClose" aria-label="Close">&#x2716;</button>
     </div>
     <div class="sel-body">
-      ${chips.length ? `<div class="chips">${chips.map((c) => `<span>${c}</span>`).join('')}</div>` : ''}
-      ${status ? `<div class="note">${status}</div>` : ''}
-      ${nextInfo}
+      <div class="rings">${rings.join('')}</div>
       ${brewHTML}
       ${actions.length ? `<div class="sel-actions">${actions.join('')}</div>` : ''}
     </div>`;
@@ -1737,20 +1775,23 @@ function renderSel(force) {
   updateSelLive(b);
   $('selClose').onclick = deselect;
   el.querySelectorAll('[data-brew]').forEach((bt) => { bt.onclick = () => brew(bt.dataset.brew); });
-  const rp = $('repairBtn'); if (rp) rp.onclick = () => repair(b);
+  el.querySelectorAll('[data-why]').forEach((bt) => { bt.onclick = () => { toast(bt.dataset.why); sfx('nope'); }; });
+  const rp = $('repairBtn'); if (rp && !rp.dataset.why) rp.onclick = () => repair(b);
   const up = $('upBtn'); if (up) up.onclick = () => upgrade(b);
-  const mv = $('moveBtn'); if (mv) mv.onclick = () => beginMove(b);
-  const ra = $('rearrangeBtn'); if (ra) ra.onclick = beginRearrange;
   const sl = $('sellBtn'); if (sl) sl.onclick = () => { S.buildings = S.buildings.filter((o) => o !== b); rebuildBlocked(); deselect(); save(); refreshUI(); sfx('click'); };
 }
 function updateSelLive(b) {
-  $('sel').querySelectorAll('[data-stored]').forEach((el) => { el.textContent = fmt(storedIn(b, el.dataset.stored)); });
-  const hp = b.destroyed ? 0 : b.hp;
-  const h = $('selHp'); if (h) h.textContent = `${fmt(hp)}/${fmt(maxHp(b))}`;
-  const bar = $('selBar'); if (bar) { const f = hp / maxHp(b); bar.style.width = f * 100 + '%'; bar.style.background = hpColor(f); bar.style.boxShadow = `0 0 8px ${hpColor(f)}`; }
+  const el = $('sel');
+  const hpR = el.querySelector('[data-live="hp"]');
+  if (hpR) { const hp = b.destroyed ? 0 : b.hp, f = hp / maxHp(b); setRing(hpR, f, short(Math.round(hp)), hpColor(f)); }
+  for (const r of ['gold', 'elixir']) {
+    const st = el.querySelector(`[data-live="store-${r}"]`);
+    if (!st) continue;
+    const cap = b.type === 'townhall' ? TYPES.townhall.cap[thLevel() - 1] : def(b).store[b.lvl - 1];
+    const v = storedIn(b, r); setRing(st, v / cap, short(Math.floor(v)));
+  }
   const rc = $('repairCost');
   if (rc) { const c = rc.lastChild; if (c && c.nodeType === 3) c.textContent = fmt(repairCost(b)); }
-  const rb = $('repairBtn'); if (rb) rb.classList.toggle('off', S.gold < repairCost(b));
 }
 function upgrade(b) {
   const t = def(b), next = b.lvl + 1, p = t.cost[next - 1];
@@ -1758,7 +1799,7 @@ function upgrade(b) {
   if (p[2] > 0 && builders().free <= 0) { toast('All builders are busy'); sfx('nope'); return; }
   S.gold -= p[0]; S.elixir -= p[1];
   if (p[2] === 0) { b.lvl = next; b.hp = maxHp(b); toast(`${t.name} upgraded to level ${next}!`); }
-  else { b.cons = { to: next, days: p[2] }; toast(`Upgrade started: ${daysLabel(p[2])}`); }
+  else { b.cons = { to: next, days: p[2], total: p[2] }; toast(`Upgrade started: ${daysLabel(p[2])}`); }
   sfx('build'); save(); refreshUI(); renderSel(true);
 }
 
@@ -1783,9 +1824,11 @@ function beginPlace(type, near) {
     : { type, x: spot.x, y: spot.y, ok: true, moveId: null };
   refreshUI();
 }
-function beginMove(b) {
-  deselect();
-  placing = { type: b.type, x: b.x, y: b.y, ok: true, moveId: b.id, lvl: b.lvl };
+// ----- move mode: drag any building to a new spot -----
+function beginArrange() {
+  if (S.phase !== 'build' || placing) return;
+  closeModal(); deselect();
+  placing = { arrange: true, type: 'townhall', orig: new Map(S.buildings.map((b) => [b.id, { x: b.x, y: b.y }])), sel: null, bad: null };
   refreshUI();
 }
 // ----- rearranging every wall from scratch -----
@@ -1808,6 +1851,7 @@ function beginRearrange() {
 // every square being placed right now, for drawing
 function placingSpots() {
   if (!placing) return [];
+  if (placing.arrange) return placing.bad ? [{ type: placing.bad.type, x: placing.bad.x, y: placing.bad.y, ok: false, lvl: placing.bad.lvl }] : [];
   if (placing.multi) {
     // free walls (rearranged or stored) keep their level; bought ones are level 1
     const free = placing.rearrange ? placing.pool : S.wallStash;
@@ -1842,6 +1886,11 @@ function paintWallsTo(x, y) {
   updatePlaceTip();
 }
 function cancelPlace() {
+  if (placing && placing.arrange) {   // put every building back where it was
+    for (const b of S.buildings) { const o = placing.orig.get(b.id); if (o) { b.x = o.x; b.y = o.y; } }
+    placing = null; rebuildBlocked(); refreshUI();
+    return;
+  }
   if (placing && placing.rearrange) {   // put every wall back where it was
     S.buildings.push(...placing.backup);
     S.wallStash = placing.stashBackup;
@@ -1854,6 +1903,7 @@ function cancelPlace() {
 function confirmPlace() {
   if (!placing) return;
   const p = placing;
+  if (p.arrange) { placing = null; rebuildBlocked(); save(); refreshUI(); sfx('build'); toast('Layout saved'); return; }
   if (p.multi && p.rearrange) {
     // place the walls that were drawn; any left over are stored and can be placed later from the shop
     p.walls.forEach((w, i) => { const src = p.pool[i], b = add('wall', w.x, w.y, src.lvl); if (src.hp > 0) b.hp = Math.min(src.hp, maxHp(b)); else b.hp = 1; });
@@ -1887,7 +1937,7 @@ function confirmPlace() {
   if (countOf(p.type) >= limitOf(p.type)) { toast('Upgrade the Town Hall to build more'); return; }
   S.gold -= price[0]; S.elixir -= price[1];
   if (price[2] === 0) add(p.type, p.x, p.y, 1);
-  else add(p.type, p.x, p.y, 0, { to: 1, days: price[2] });
+  else add(p.type, p.x, p.y, 0, { to: 1, days: price[2], total: price[2] });
   rebuildBlocked();
   sfx('build');
   save();
@@ -1901,7 +1951,9 @@ function updatePlaceTip() {
   if (!placing) { tip.hidden = true; return; }
   const t = TYPES[placing.type];
   let html;
-  if (placing.multi && placing.rearrange) {
+  if (placing.arrange) {
+    html = `<div class="tip-title">Move buildings</div><div class="tip-help">Drag any building to a new spot. ✔ keeps the layout, ✖ puts everything back.</div>`;
+  } else if (placing.multi && placing.rearrange) {
     const n = placing.walls.length, total = placing.pool.length;
     html = `<div class="tip-title">Rearranging walls · ${n} of ${total} placed</div>
       <div class="tip-help">Tap ground to place, tap a wall to pick it up. Drag from a wall to draw a line. ✔ saves (unplaced walls are stored), ✖ puts everything back.</div>`;
@@ -2050,6 +2102,7 @@ function showPatchNotes() {
 $('phase').onclick = () => { unlockAudio(); sfx('click'); showStats(); };
 for (const id of ['resGold', 'resElixir']) $(id).onclick = () => { unlockAudio(); sfx('click'); cycleResources(); };
 $('wallsBtn').onclick = () => { unlockAudio(); sfx('click'); beginRearrange(); };
+$('moveBtn').onclick = () => { unlockAudio(); sfx('click'); beginArrange(); };
 buildSpellBar();
 $('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
 $('repairAllBtn').onclick = () => { unlockAudio(); sfx('click'); showRepairs(); };
