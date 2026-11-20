@@ -88,8 +88,19 @@ const UNITS = {
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '0.8.0';
+const GAME_VERSION = '0.9.0';
 const PATCH_NOTES = [
+  { v: '0.9.0', date: 'Nov 20, 2026', notes: [
+    'The shop is one scrolling list with sections. Locked items sit at the bottom, sorted by the Town Hall level they need.',
+    'New Arrange button (replaces Walls and Move): move buildings, pick up all walls, or pick up all buildings.',
+    'Picked-up buildings go into an inventory bar so you can place them back one by one. Anything you leave is stored and can be placed later from the shop.',
+    'Shorter tips while placing, and the confirm/cancel buttons now sit at the bottom of the screen.',
+    'New Zoom button: press and drag left or right to zoom, tap to reset. Zooming is now smooth, and the mouse wheel zooms toward the cursor.',
+    'Double-tap the map to zoom in on that spot (double-tap again when close to zoom back out).',
+    'The number of raiders left is shown in the bottom row during a fight.',
+    'The Repair button is now Upgrade: it lists repairs and every building you can upgrade, with a button for each. Walls upgrade a whole level at once.',
+    'Fixed: raiders could get stuck outside the map when the building they wanted was completely surrounded by walls. Now they break in.',
+  ] },
   { v: '0.8.0', date: 'Nov 11, 2026', notes: [
     'Building info now uses round gauges for health, level, damage, range, output and storage, with the next-level value underneath.',
     'New Move button: drag any building to a new spot, then confirm. The Move button on each building is gone.',
@@ -218,7 +229,7 @@ const def = (b) => TYPES[b.type];
 function maxHp(b) { const t = def(b); return t.hp[Math.max(0, b.lvl - 1)]; }
 const thLevel = () => (S.buildings.find((b) => b.type === 'townhall') || { lvl: 1 }).lvl;
 const active = (b) => b.lvl >= 1 && !b.cons && !b.destroyed;
-const countOf = (type) => S.buildings.filter((b) => b.type === type).length;
+const countOf = (type) => S.buildings.filter((b) => b.type === type).length + (S.inventory || []).filter((b) => b.type === type).length;
 const limitOf = (type) => LIMITS[type][thLevel() - 1];
 function levelCap(type) {
   if (type === 'townhall') return TYPES.townhall.max;
@@ -268,7 +279,7 @@ function canAfford(p) { return S.gold >= p[0] && S.elixir >= p[1]; }
 
 function save() {
   if (!S) return;
-  if (placing && (placing.rearrange || placing.arrange)) return;   // mid-rearrange layouts are only saved once confirmed
+  if (placing && (placing.rearrange || placing.arrange || placing.pickup)) return;   // mid-rearrange layouts are only saved once confirmed
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) { /* storage unavailable */ }
 }
 function load() {
@@ -279,7 +290,8 @@ function load() {
     if (!s || !Array.isArray(s.buildings) || s.over) return false;
     s.phase = 'build';   // saves are only made while building (older saves called it 'night')
     s.spells = Object.assign({ lightning: 0, heal: 0, freeze: 0 }, s.spells || {});
-    s.wallStash = Array.isArray(s.wallStash) ? s.wallStash : [];   // walls picked up but not placed yet
+    s.wallStash = Array.isArray(s.wallStash) ? s.wallStash : [];
+    s.inventory = Array.isArray(s.inventory) ? s.inventory : [];   // buildings picked up and not placed yet   // walls picked up but not placed yet
     S = s;
     return true;
   } catch (e) { return false; }
@@ -345,10 +357,11 @@ function getField(b, range) {
     }
     return top;
   };
-  // goals: free cells within attack range of the target's footprint
+  // goals: cells within attack range of the target's footprint. Walls or buildings sitting on those cells
+  // count too (entering them means breaking them), so a target hemmed in on every side is still reachable.
   for (let y = -MARGIN; y < GRID + MARGIN; y++) for (let x = -MARGIN; x < GRID + MARGIN; x++) {
     const i = cellIndex(x, y);
-    if (blocked[i]) continue;
+    if (blocked[i] === b.id) continue;
     if (distToRect(x + 0.5, y + 0.5, b) <= range + 0.45) { dist[i] = 0; push(i, 0); }
   }
   const cost = (i) => {
@@ -606,6 +619,11 @@ function updateUnit(u, dt) {
   const range = d.range;
   // close enough to hit (matches the goal cells of the path field, so no one walks over anything)
   if (distToRect(u.x, u.y, u.target) <= range + 0.45) { attack(u, u.target); return; }
+  u.chkT = (u.chkT || 0) + dt;
+  if (u.chkT > 2.5) {
+    if (Math.hypot(u.x - (u.cx0 ?? u.x + 9), u.y - (u.cy0 ?? 0)) < 0.3) { unstick(u); if (u.wall) return; }
+    u.chkT = 0; u.cx0 = u.x; u.cy0 = u.y;
+  }
   if (!u.next || Math.hypot(u.next.x - u.x, u.next.y - u.y) < 0.12) {
     const f = getField(u.target, range);
     const cx = Math.floor(u.x), cy = Math.floor(u.y);
@@ -644,7 +662,19 @@ function updateUnit(u, dt) {
   u.walk += dt * 10;
 }
 
+// last resort for a raider that can't make progress: break the first thing between it and its target
+function unstick(u) {
+  const c = center(u.target), d = Math.hypot(c.x - u.x, c.y - u.y);
+  for (let k = 0.3; k < d; k += 0.25) {
+    const x = Math.floor(u.x + ((c.x - u.x) * k) / d), y = Math.floor(u.y + ((c.y - u.y) * k) / d);
+    const id = inField(x, y) && blocked[cellIndex(x, y)];
+    const o = id && byId(id);
+    if (o && !o.destroyed && o !== u.target) { u.wall = o; u.next = null; return; }
+  }
+  u.next = { x: c.x, y: c.y };
+}
 function attack(u, b) {
+  u.chkT = 0; u.cx0 = u.x; u.cy0 = u.y;
   const c = center(b);
   const ddx = c.x - u.x;
   if (Math.abs(ddx) > 0.01) u.dir = ddx > 0 ? 1 : -1;
@@ -852,7 +882,6 @@ function updateFx(dt) {
 const canvas = $('game');
 let g = canvas.getContext('2d');
 let scale = 2, W = 0, H = 0;                  // W, H: visible size in world units
-const ZOOMS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 const cam = { x: 0, y: 0 };                   // world point at the centre of the screen
 const TAU = Math.PI * 2;
 const FONT_STACK = '"Exo 2", system-ui, sans-serif';
@@ -1312,17 +1341,23 @@ function resize() {
   g.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
   g.imageSmoothingEnabled = true;
 }
+// zoom is continuous: from "the whole map fills a good part of the screen" up to 4x
+const MAX_ZOOM = 4;
+function minZoom() { return Math.max(0.3, (0.6 * Math.min(window.innerWidth, window.innerHeight)) / (N * T)); }
+function clampZoom(z) { return clamp(z, minZoom(), MAX_ZOOM); }
 function autoScale() {
   const vw = window.innerWidth, vh = window.innerHeight;
-  return nearestZoom(Math.min(vw / 480, vh / 360));
+  return clampZoom(Math.min(vw / 480, vh / 360));
 }
-// the furthest zoom still keeps the map filling a good part of the screen (phones can go further out than desktops)
-function zoomLevels() {
-  const minZ = (0.6 * Math.min(window.innerWidth, window.innerHeight)) / (N * T);
-  const ok = ZOOMS.filter((z) => z >= minZ);
-  return ok.length ? ok : [ZOOMS[ZOOMS.length - 1]];
+// zoom while keeping the map point under (clientX, clientY) in place
+function zoomAt(clientX, clientY, z) {
+  const before = screenToTile(clientX, clientY);
+  setScale(clampZoom(z));
+  const after = screenToTile(clientX, clientY);
+  cam.x += (before.x - after.x) * T; cam.y += (before.y - after.y) * T;
+  clampCam();
 }
-function nearestZoom(z) { return zoomLevels().reduce((a, b) => (Math.abs(Math.log(b / z)) < Math.abs(Math.log(a / z)) ? b : a)); }
+let lastTap = { t: 0, x: 0, y: 0 };
 function screenToTile(clientX, clientY) {
   return { x: (clientX / scale - W / 2 + cam.x) / T, y: (clientY / scale - H / 2 + cam.y) / T };
 }
@@ -1360,7 +1395,7 @@ canvas.addEventListener('pointerdown', (e) => {
     if (grab) { mode = 'arrange'; placing.sel = grab.id; }
   } else if (placing && placing.multi) {
     if (pendingAt(Math.floor(t.x), Math.floor(t.y)) >= 0) { mode = 'paint'; placing.paintFrom = [Math.floor(t.x), Math.floor(t.y)]; placing.warned = false; }
-  } else if (placing) {
+  } else if (placing && (!placing.pickup || placing.cur)) {
     const s = TYPES[placing.type].size;
     if (t.x >= placing.x - 0.5 && t.x < placing.x + s + 0.5 && t.y >= placing.y - 0.5 && t.y < placing.y + s + 0.5) mode = 'ghost';
   }
@@ -1374,8 +1409,8 @@ canvas.addEventListener('pointermove', (e) => {
   if (pinch && pointers.size === 2) {
     const [p1, p2] = [...pointers.values()];
     const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-    const want = nearestZoom(pinch.scale * d / pinch.d);
-    if (want !== scale) setScale(want);
+    const want = clampZoom(pinch.scale * d / pinch.d);
+    if (Math.abs(want - scale) > 0.001) setScale(want);
     return;
   }
   if (!drag) return;
@@ -1407,10 +1442,18 @@ const endPointer = (e) => {
   canvas.classList.remove('dragging');
   if (placing && placing.arrange) placing.bad = null;
   if (d.moved || e.type === 'pointercancel') return;
-  // a tap
+  // a tap; two quick taps in the same spot zoom in there (or back out when already close)
   const t = screenToTile(e.clientX, e.clientY);
+  const now = performance.now();
+  if (!placing && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+    lastTap.t = 0;
+    zoomAt(e.clientX, e.clientY, scale < MAX_ZOOM * 0.85 ? scale * 1.8 : autoScale());
+    return;
+  }
+  lastTap = { t: now, x: e.clientX, y: e.clientY };
   if (spellArmed && S.phase === 'raid') { castSpell(spellArmed, t.x, t.y); return; }
   if (placing && placing.arrange) return;   // a tap just picks the building (done on press)
+  if (placing && placing.pickup && !placing.cur) return;
   if (placing && placing.multi) {
     const x = Math.floor(t.x), y = Math.floor(t.y), i = pendingAt(x, y);
     if (i >= 0) placing.walls.splice(i, 1); else addPendingWall(x, y);
@@ -1431,7 +1474,7 @@ const endPointer = (e) => {
 canvas.addEventListener('pointerleave', () => { hover = null; });
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)); }, { passive: false });
 window.addEventListener('resize', () => { resize(); });
 if (window.visualViewport) window.visualViewport.addEventListener('resize', () => resize());
 window.addEventListener('orientationchange', () => setTimeout(resize, 150));
@@ -1448,14 +1491,35 @@ window.addEventListener('keydown', (e) => {
   if (S && S.phase === 'raid' && !e.repeat && $('modal').hidden) { const k = ['1', '2', '3'].indexOf(e.key); if (k >= 0) armSpell(Object.keys(SPELLS)[k]); }
 });
 function setScale(s) { scale = s; resize(); clampCam(); }
-function zoomBy(d) { const z = zoomLevels(); setScale(z[clamp(z.indexOf(nearestZoom(scale)) + d, 0, z.length - 1)]); }
+function zoomBy(d) { zoomAt(window.innerWidth / 2, window.innerHeight / 2, scale * (d > 0 ? 1.25 : 0.8)); }
+// the zoom button: press and drag left/right to zoom out/in; a plain tap goes back to the normal zoom
+(function zoomButton() {
+  const btn = $('zoomBtn'), label = $('zoomLabel');
+  let start = null;
+  const show = () => { label.textContent = Math.round((scale / autoScale()) * 100) + '%'; };
+  btn.addEventListener('pointerdown', (e) => { btn.setPointerCapture(e.pointerId); start = { x: e.clientX, z: scale, moved: false }; btn.classList.add('dragging'); show(); });
+  btn.addEventListener('pointermove', (e) => {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    if (Math.abs(dx) > 4) start.moved = true;
+    zoomAt(window.innerWidth / 2, window.innerHeight / 2, start.z * Math.exp(dx / 110));
+    show();
+  });
+  const end = () => {
+    if (!start) return;
+    if (!start.moved) { zoomAt(window.innerWidth / 2, window.innerHeight / 2, autoScale()); sfx('click'); }
+    start = null; btn.classList.remove('dragging');
+    setTimeout(() => { if (!start) label.textContent = 'Zoom'; }, 700);
+  };
+  btn.addEventListener('pointerup', end); btn.addEventListener('pointercancel', end);
+})();
 
 /* =====================================================================
    UI
    ===================================================================== */
 // HUD icons: small neon line drawings on a 24x24 grid (drawn at 2x for sharpness)
 const ICON_COL = { sword: '#ff3b5c', sun: '#ffd23f', moon: '#c8c8ff', hammer: '#e0e0ff', shop: '#35f0ff', shield: '#35f0ff',
-  clock: '#e0e0ff', wall: '#7d7dff', move: '#c8c8ff', check: '#07070f', cross: '#07070f', bolt: '#a8e0ff', snow: '#7cd8f8', heart: '#3dffa8', stats: '#35f0ff' };
+  clock: '#e0e0ff', wall: '#7d7dff', move: '#c8c8ff', zoom: '#35f0ff', check: '#07070f', cross: '#07070f', bolt: '#a8e0ff', snow: '#7cd8f8', heart: '#3dffa8', stats: '#35f0ff' };
 function drawIcon(c, name) {
   c.width = 48; c.height = 48; c.dataset.icon = name;
   const prev = g; g = c.getContext('2d'); g.scale(2, 2);
@@ -1477,6 +1541,7 @@ function drawIcon(c, name) {
       case 'snow': for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; line(12 - Math.cos(a) * 9, 12 - Math.sin(a) * 9, 12 + Math.cos(a) * 9, 12 + Math.sin(a) * 9, col, L); } break;
       case 'heart': g.beginPath(); g.moveTo(12, 20); g.bezierCurveTo(2, 13, 4, 4, 12, 8); g.bezierCurveTo(20, 4, 22, 13, 12, 20); g.strokeStyle = col; g.lineWidth = L; g.stroke(); break;
       case 'move': line(12, 3, 12, 21, col, L); line(3, 12, 21, 12, col, L); for (const [a, b2, c2, d2] of [[12, 3, 9, 6], [12, 3, 15, 6], [12, 21, 9, 18], [12, 21, 15, 18], [3, 12, 6, 9], [3, 12, 6, 15], [21, 12, 18, 9], [21, 12, 18, 15]]) line(a, b2, c2, d2, col, L); break;
+      case 'zoom': disc(10, 10, 6.5, null, col, L); line(15, 15, 21, 21, col, 2.6); line(7, 10, 13, 10, col, 1.4); line(10, 7, 10, 13, col, 1.4); break;
       case 'check': poly([[5, 12], [10, 17], [19, 6]], null, col, 2.6, true); break;
       case 'cross': line(6, 6, 18, 18, col, 2.6); line(18, 6, 6, 18, col, 2.6); break;
       case 'stats': line(5, 19, 19, 19, col, L); line(7, 19, 7, 12, col, 2.6); line(12, 19, 12, 6, col, 2.6); line(17, 19, 17, 10, col, 2.6); break;
@@ -1528,8 +1593,8 @@ function refreshUI() {
     $(res + 'Fill').style.width = clamp((S[res] / cap) * 100, 0, 100) + '%';
   }
   $('shopBtn').hidden = !building || !!placing;
-  $('wallsBtn').hidden = !building || !!placing || !wallTotal();
-  $('moveBtn').hidden = !building || !!placing;
+  $('arrangeBtn').hidden = !building || !!placing;
+  document.body.classList.toggle('placing', !!placing);
   $('defendBtn').hidden = !building || !!placing;
   $('defendBtn').title = `Start night ${S.day}: the raid begins`;
   $('wave').hidden = S.phase !== 'raid';
@@ -1555,7 +1620,7 @@ function brew(type) {
   if (S.elixir < sp.cost) { toast(`Not enough ${resName('elixir').toLowerCase()}`); sfx('nope'); return; }
   S.elixir -= sp.cost;
   S.spells[type]++;
-  sfx('build'); save(); refreshUI(); renderSel(true);
+  sfx('build'); save(); refreshUI(); if (selectedId) renderSel(true);
 }
 function buildSpellBar() {
   const bar = $('spellBar');
@@ -1589,7 +1654,7 @@ function updateSpells() {
 function updateWave() {
   if (S.phase !== 'raid') return;
   const left = units.length + spawnQueue.length;
-  $('waveText').textContent = 'ENEMIES ' + left;
+  $('waveText').textContent = left;
 }
 
 // ----- repairs -----
@@ -1639,49 +1704,88 @@ function repairAll() {
   sfx('build'); if (S.phase === 'build') save(); refreshUI(); if (selectedId) renderSel(true);
   if (!$('modal').hidden && $('repairList')) showRepairs();
 }
-// the repair list: every damaged building, its health and price, with a button each and one for all
+// Repairs & upgrades: what needs fixing, and (by day) everything that can be upgraded, each with its own button
 function showRepairs() {
-  const list = damaged().sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || missingHp(b) / maxHp(b) - missingHp(a) / maxHp(a));
-  if (!list.length) { closeModal(); toast('Everything is in perfect shape'); return; }
-  const total = list.reduce((a, b) => a + repairCost(b), 0);
-  // group walls into one row so a long wall line doesn't flood the list
-  const walls = list.filter((b) => b.type === 'wall'), others = list.filter((b) => b.type !== 'wall');
-  const rows = others.map((b) => {
-    const f = b.destroyed ? 0 : b.hp / maxHp(b);
-    return `<div class="rep-row" data-id="${b.id}"><span class="rep-pic"></span>
-      <div class="rep-info"><div class="rep-name">${def(b).name} <span class="lvl">Lv ${Math.max(1, b.lvl)}</span></div>
-        <div class="hpbar mini"><i style="width:${f * 100}%;background:${hpColor(f)}"></i></div>
-        <div class="rep-hp">${b.destroyed ? 'Destroyed' : `${fmt(b.hp)} / ${fmt(maxHp(b))} HP`}</div></div>
-      <button class="btn mini go${S.gold < repairCost(b) ? ' off' : ''}" data-fix="${b.id}">Repair <span class="cost" data-cost="gold">${fmt(repairCost(b))}</span></button></div>`;
-  });
-  if (walls.length) {
-    const wc = walls.reduce((a, b) => a + repairCost(b), 0), down = walls.filter((w) => w.destroyed).length;
-    rows.push(`<div class="rep-row"><span class="rep-pic" data-ico="wall" data-px="32"></span>
-      <div class="rep-info"><div class="rep-name">Walls × ${walls.length}</div><div class="rep-hp">${down ? down + ' destroyed, ' : ''}${walls.length - down} damaged</div></div>
-      <button class="btn mini go${S.gold < wc ? ' off' : ''}" data-fixwalls="1">Repair <span class="cost" data-cost="gold">${fmt(wc)}</span></button></div>`);
+  const dmg = damaged().sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || missingHp(b) / maxHp(b) - missingHp(a) / maxHp(a));
+  const g1 = resName('gold').toLowerCase();
+  const thumbRow = (b, info, btn) => `<div class="rep-row" data-id="${b.id}"><span class="rep-pic"></span><div class="rep-info">${info}</div>${btn}</div>`;
+  const rows = [];
+  // --- repairs (walls grouped into one row so a long wall line doesn't flood the list)
+  const walls = dmg.filter((b) => b.type === 'wall');
+  for (const b of dmg.filter((b) => b.type !== 'wall')) {
+    const f = b.destroyed ? 0 : b.hp / maxHp(b), c = repairCost(b);
+    rows.push(thumbRow(b, `<div class="rep-name">${def(b).name} <span class="lvl">Lv ${Math.max(1, b.lvl)}</span></div>
+      <div class="hpbar mini"><i style="width:${f * 100}%;background:${hpColor(f)}"></i></div>`,
+      `<button class="btn mini go${S.gold < c ? ' is-disabled' : ''}" ${S.gold < c ? `data-why="Not enough ${g1}"` : `data-fix="${b.id}"`}>Repair <span class="cost" data-cost="gold">${fmt(c)}</span></button>`));
   }
-  popup('REPAIRS', `<div class="rep-list" id="repairList">${rows.join('')}</div>`,
-    [[`Repair all <span class="cost" data-cost="gold">${fmt(total)}</span>`, 'go', () => repairAll()], ['Close', 'wood', closeModal]], 'repairs');
+  if (walls.length) {
+    const wc = walls.reduce((a, b) => a + repairCost(b), 0);
+    rows.push(`<div class="rep-row"><span class="rep-pic" data-ico="wall" data-px="30"></span><div class="rep-info"><div class="rep-name">Walls ×${walls.length}</div></div>
+      <button class="btn mini go" data-fixwalls="1">Repair <span class="cost" data-cost="gold">${fmt(wc)}</span></button></div>`);
+  }
+  const repHTML = rows.length ? `<div class="rep-section">REPAIRS</div>${rows.join('')}` : '';
+  // --- upgrades (by day only)
+  let upHTML = '';
+  if (S.phase === 'build') {
+    const ups = S.buildings.filter((b) => b.type !== 'wall' && b.lvl >= 1 && !b.cons && b.lvl < def(b).max && def(b).cost[b.lvl])
+      .map((b) => ({ b, why: upgradeBlock(b) }))
+      .sort((a, b) => !!a.why - !!b.why || (b.b.type === 'townhall') - (a.b.type === 'townhall'));
+    const urows = ups.map(({ b, why }) => {
+      const p = def(b).cost[b.lvl];
+      return thumbRow(b, `<div class="rep-name">${def(b).name}</div><div class="rep-hp">Lv ${b.lvl} → ${b.lvl + 1} · ${daysLabel(p[2])}</div>`,
+        `<button class="btn mini go${why ? ' is-disabled' : ''}" ${why ? `data-why="${why}"` : `data-up="${b.id}"`}>${costHTML(p)}</button>`);
+    });
+    // walls: one row per level, upgrading as many as you can afford
+    const byLvl = new Map();
+    for (const w of S.buildings) if (w.type === 'wall' && w.lvl >= 1 && !w.destroyed && w.lvl < TYPES.wall.max) byLvl.set(w.lvl, (byLvl.get(w.lvl) || 0) + 1);
+    for (const [lvl, n] of [...byLvl].sort((a, b) => a[0] - b[0])) {
+      const price = TYPES.wall.cost[lvl], why = lvl + 1 > levelCap('wall') ? `Needs Town Hall ${lvl + 1}` : S.gold < price[0] ? `Not enough ${g1}` : '';
+      urows.push(`<div class="rep-row"><span class="rep-pic" data-ico="wall" data-px="30"></span><div class="rep-info"><div class="rep-name">Walls ×${n}</div><div class="rep-hp">Lv ${lvl} → ${lvl + 1} · each</div></div>
+        <button class="btn mini go${why ? ' is-disabled' : ''}" ${why ? `data-why="${why}"` : `data-upwalls="${lvl}"`}>${costHTML(price)}</button></div>`);
+    }
+    if (urows.length) upHTML = `<div class="rep-section">UPGRADES</div>${urows.join('')}`;
+  }
+  if (!repHTML && !upHTML) { closeModal(); toast('Nothing to repair or upgrade right now'); return; }
+  const total = dmg.reduce((a, b) => a + repairCost(b), 0);
+  const btns = dmg.length ? [[`Repair all <span class="cost" data-cost="gold">${fmt(total)}</span>`, 'go', () => repairAll()]] : [];
+  popup(S.phase === 'build' ? 'UPGRADES' : 'REPAIRS', `<div class="rep-list" id="repairList">${repHTML}${upHTML}</div>`, [...btns, ['Close', 'wood', closeModal]], 'repairs');
   const m = $('modal');
   m.querySelectorAll('.rep-row[data-id]').forEach((row) => row.querySelector('.rep-pic').appendChild(buildingThumb(byId(+row.dataset.id), 36)));
+  m.querySelectorAll('[data-why]').forEach((bt) => { bt.onclick = () => { toast(bt.dataset.why); sfx('nope'); }; });
   m.querySelectorAll('[data-fix]').forEach((bt) => { bt.onclick = () => repair(byId(+bt.dataset.fix)); });
+  m.querySelectorAll('[data-up]').forEach((bt) => { bt.onclick = () => { upgrade(byId(+bt.dataset.up)); showRepairs(); }; });
+  m.querySelectorAll('[data-upwalls]').forEach((bt) => { bt.onclick = () => { upgradeWalls(+bt.dataset.upwalls); showRepairs(); }; });
   const fw = m.querySelector('[data-fixwalls]');
   if (fw) fw.onclick = () => {
     let fixed = 0;
     for (const w of damaged().filter((b) => b.type === 'wall')) { const c = repairCost(w); if (S.gold < c) break; S.gold -= c; fixBuilding(w); fixed++; }
-    if (!fixed) { toast(`Not enough ${resName('gold').toLowerCase()}`); sfx('nope'); return; }
+    if (!fixed) { toast(`Not enough ${g1}`); sfx('nope'); return; }
     sfx('build'); if (S.phase === 'build') save(); refreshUI(); showRepairs();
   };
 }
+// upgrade every wall of one level, as many as you can afford (walls upgrade instantly)
+function upgradeWalls(lvl) {
+  const price = TYPES.wall.cost[lvl];
+  let n = 0;
+  for (const w of S.buildings) {
+    if (w.type !== 'wall' || w.lvl !== lvl || w.destroyed || S.gold < price[0]) continue;
+    S.gold -= price[0]; w.lvl++; w.hp = maxHp(w); n++;
+  }
+  if (!n) { toast(`Not enough ${resName('gold').toLowerCase()}`); sfx('nope'); return; }
+  toast(`${n} wall${n > 1 ? 's' : ''} upgraded to level ${lvl + 1}`); sfx('build'); save(); refreshUI();
+}
+// the Upgrade button: always there by day (repairs + upgrades); at night only when something needs repair.
+// Its badge counts damaged buildings (red) or, if nothing is damaged, upgrades you can start now (green).
 function updateRepairAll() {
-  const btn = $('repairAllBtn');
+  const btn = $('repairAllBtn'), badge = $('repairAllText');
   const list = S.phase === 'build' || S.phase === 'raid' ? damaged() : [];
-  btn.hidden = !list.length || !!placing;
+  btn.hidden = !!placing || (S.phase === 'build' ? false : !list.length);
+  $('workLabel').textContent = S.phase === 'build' ? 'Upgrade' : 'Repair';
   if (btn.hidden) return;
-  const cost = list.reduce((a, b) => a + repairCost(b), 0);
-  $('repairAllText').textContent = list.length;
-  btn.title = `${list.length} damaged building${list.length > 1 ? 's' : ''}: tap to see repairs`;
-  btn.classList.toggle('off', S.gold < Math.min(...list.map(repairCost)));
+  const ready = S.phase === 'build' ? S.buildings.filter((b) => b.type !== 'wall' && b.lvl >= 1 && !b.cons && b.lvl < def(b).max && def(b).cost[b.lvl] && !upgradeBlock(b)).length : 0;
+  badge.hidden = !list.length && !ready;
+  badge.textContent = list.length || ready;
+  badge.classList.toggle('good', !list.length && ready > 0);
 }
 
 // ----- selection panel -----
@@ -1800,7 +1904,7 @@ function upgrade(b) {
   S.gold -= p[0]; S.elixir -= p[1];
   if (p[2] === 0) { b.lvl = next; b.hp = maxHp(b); toast(`${t.name} upgraded to level ${next}!`); }
   else { b.cons = { to: next, days: p[2], total: p[2] }; toast(`Upgrade started: ${daysLabel(p[2])}`); }
-  sfx('build'); save(); refreshUI(); renderSel(true);
+  sfx('build'); save(); refreshUI(); if (selectedId) renderSel(true);
 }
 
 // ----- placing / moving -----
@@ -1831,6 +1935,53 @@ function beginArrange() {
   placing = { arrange: true, type: 'townhall', orig: new Map(S.buildings.map((b) => [b.id, { x: b.x, y: b.y }])), sel: null, bad: null };
   refreshUI();
 }
+// ----- one Arrange button: move buildings, or pick up all walls / all buildings -----
+function showArrangeMenu() {
+  if (S.phase !== 'build' || placing) return;
+  const inv = (S.inventory || []).length;
+  const opts = [
+    ['move', 'Move buildings', 'Drag any building to a new spot'],
+    ['walls', 'Pick up all walls', 'Lay every wall out again'],
+    ['all', 'Pick up all buildings', 'Place them back one by one'],
+  ];
+  if (inv) opts.push(['inv', `Place stored buildings (${inv})`, 'Put down what you picked up earlier']);
+  popup('ARRANGE', `<div class="menu-list">${opts.map(([id, t, d]) => `<button class="menu-item" data-opt="${id}"><b>${t}</b><span>${d}</span></button>`).join('')}</div>`, [['Close', 'wood', closeModal]], 'arrange');
+  $('modal').querySelectorAll('[data-opt]').forEach((bt) => {
+    bt.onclick = () => { sfx('click'); closeModal(); ({ move: beginArrange, walls: beginRearrange, all: () => beginPickup(true), inv: () => beginPickup(false) })[bt.dataset.opt](); };
+  });
+}
+// ----- picking buildings up into an inventory and placing them back -----
+function beginPickup(liftAll) {
+  if (S.phase !== 'build' || placing) return;
+  closeModal(); deselect();
+  const backup = { buildings: S.buildings.slice(), inventory: (S.inventory || []).slice() };
+  const pos = new Map([...backup.buildings, ...backup.inventory].map((b) => [b, { x: b.x, y: b.y }]));
+  let inv = backup.inventory.slice();
+  if (liftAll) { inv = S.buildings.filter((b) => b.type !== 'wall').concat(inv); S.buildings = S.buildings.filter((b) => b.type === 'wall'); }
+  if (!inv.length) { toast('Nothing to place'); return; }
+  S.inventory = [];
+  // the Town Hall first, then bigger buildings
+  inv.sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || def(b).size - def(a).size);
+  placing = { pickup: true, inv, cur: null, type: 'townhall', x: 0, y: 0, ok: false, backup, pos, moveId: null };
+  rebuildBlocked();
+  pickFromInventory(0);
+  refreshUI();
+}
+function pickFromInventory(i) {
+  const b = placing.inv[i];
+  if (!b) { placing.cur = null; return; }
+  const spot = freeSpotFor(b.type);
+  if (!spot) { toast('No room left for that one'); return; }
+  placing.cur = b; placing.type = b.type; placing.lvl = Math.max(1, b.lvl); placing.x = spot.x; placing.y = spot.y; placing.ok = true;
+  updatePlaceTip();
+}
+function finishPickup() {
+  const p = placing;
+  if (p.inv.some((b) => b.type === 'townhall')) { toast('Place your Town Hall first'); sfx('nope'); return; }
+  S.inventory = p.inv;   // anything left waits in storage (the shop and the Arrange menu can place it later)
+  placing = null; rebuildBlocked(); save(); refreshUI(); sfx('build');
+  toast(S.inventory.length ? `${S.inventory.length} building${S.inventory.length > 1 ? 's' : ''} stored for later` : 'All buildings placed');
+}
 // ----- rearranging every wall from scratch -----
 const stashCount = () => (S.wallStash || []).length;
 const wallTotal = () => countOf('wall') + stashCount();
@@ -1846,11 +1997,11 @@ function beginRearrange() {
   placing = { type: 'wall', multi: true, rearrange: true, walls: [], pool, backup: walls, stashBackup: S.wallStash.slice(), moveId: null };
   rebuildBlocked();
   refreshUI();
-  toast('All walls picked up. Tap or drag to place them again.', 2600);
 }
 // every square being placed right now, for drawing
 function placingSpots() {
   if (!placing) return [];
+  if (placing.pickup) return placing.cur ? [{ type: placing.type, x: placing.x, y: placing.y, ok: placing.ok, lvl: placing.lvl }] : [];
   if (placing.arrange) return placing.bad ? [{ type: placing.bad.type, x: placing.bad.x, y: placing.bad.y, ok: false, lvl: placing.bad.lvl }] : [];
   if (placing.multi) {
     // free walls (rearranged or stored) keep their level; bought ones are level 1
@@ -1886,6 +2037,13 @@ function paintWallsTo(x, y) {
   updatePlaceTip();
 }
 function cancelPlace() {
+  if (placing && placing.pickup) {
+    if (placing.cur) { placing.cur = null; updatePlaceTip(); return; }   // ✖ first just puts the current one back in the bar
+    for (const [b, o] of placing.pos) { b.x = o.x; b.y = o.y; }        // then it undoes everything
+    S.buildings = placing.backup.buildings; S.inventory = placing.backup.inventory;
+    placing = null; rebuildBlocked(); refreshUI();
+    return;
+  }
   if (placing && placing.arrange) {   // put every building back where it was
     for (const b of S.buildings) { const o = placing.orig.get(b.id); if (o) { b.x = o.x; b.y = o.y; } }
     placing = null; rebuildBlocked(); refreshUI();
@@ -1903,6 +2061,17 @@ function cancelPlace() {
 function confirmPlace() {
   if (!placing) return;
   const p = placing;
+  if (p.pickup) {
+    if (!p.cur) { finishPickup(); return; }
+    if (!p.ok) { toast("Can't go here"); sfx('nope'); return; }
+    const b = p.cur; b.x = p.x; b.y = p.y;
+    S.buildings.push(b); p.inv.splice(p.inv.indexOf(b), 1); p.cur = null;
+    rebuildBlocked(); sfx('build');
+    if (!p.inv.length) { finishPickup(); return; }
+    pickFromInventory(0);
+    refreshUI();
+    return;
+  }
   if (p.arrange) { placing = null; rebuildBlocked(); save(); refreshUI(); sfx('build'); toast('Layout saved'); return; }
   if (p.multi && p.rearrange) {
     // place the walls that were drawn; any left over are stored and can be placed later from the shop
@@ -1951,12 +2120,15 @@ function updatePlaceTip() {
   if (!placing) { tip.hidden = true; return; }
   const t = TYPES[placing.type];
   let html;
-  if (placing.arrange) {
-    html = `<div class="tip-title">Move buildings</div><div class="tip-help">Drag any building to a new spot. ✔ keeps the layout, ✖ puts everything back.</div>`;
+  if (placing.pickup) {
+    const c = placing.cur;
+    html = c ? `<div class="tip-title">${def(c).name}${placing.ok ? '' : " · <span class='bad'>blocked</span>"}</div><div class="tip-help">Drag or tap a spot · ${placing.inv.length} left</div>`
+      : `<div class="tip-title">${placing.inv.length} to place</div><div class="tip-help">Pick one below, or ✔ to store the rest</div>`;
+  } else if (placing.arrange) {
+    html = `<div class="tip-title">Move buildings</div><div class="tip-help">Drag any building</div>`;
   } else if (placing.multi && placing.rearrange) {
     const n = placing.walls.length, total = placing.pool.length;
-    html = `<div class="tip-title">Rearranging walls · ${n} of ${total} placed</div>
-      <div class="tip-help">Tap ground to place, tap a wall to pick it up. Drag from a wall to draw a line. ✔ saves (unplaced walls are stored), ✖ puts everything back.</div>`;
+    html = `<div class="tip-title">Walls · ${n}/${total} placed</div><div class="tip-help">Tap or drag to place</div>`;
   } else if (placing.multi) {
     const n = placing.walls.length, price = priceOf('wall', 1), buy = wallsToBuy(n), free = n - buy;
     html = `<div class="tip-title">${n} wall${n === 1 ? '' : 's'} · ${buy ? costHTML([price[0] * buy, 0]) : 'Free'}${free ? ` <span class="tip-free">(${free} stored)</span>` : ''}</div>
@@ -1971,52 +2143,94 @@ function updatePlaceTip() {
   tip.innerHTML = html;
   hydrateCosts(tip);
   tip.hidden = false;
+  renderInventory();
+}
+// the inventory bar while placing picked-up buildings: one button per kind and level, with a count
+function renderInventory() {
+  const bar = $('invBar');
+  if (!placing || !placing.pickup) { bar.hidden = true; return; }
+  const groups = new Map();
+  placing.inv.forEach((b, i) => { const k = b.type + ':' + b.lvl; if (!groups.has(k)) groups.set(k, { i, b, n: 0 }); groups.get(k).n++; });
+  bar.innerHTML = '';
+  for (const { i, b, n } of groups.values()) {
+    const bt = document.createElement('button');
+    bt.className = 'inv-item' + (placing.cur && placing.cur.type === b.type && placing.cur.lvl === b.lvl ? ' on' : '');
+    bt.title = `${def(b).name} (level ${Math.max(1, b.lvl)})`;
+    bt.appendChild(buildingThumb(b, 38));
+    if (n > 1) bt.insertAdjacentHTML('beforeend', `<span class="inv-count">${n}</span>`);
+    bt.onclick = () => { sfx('click'); pickFromInventory(i); };
+    bar.appendChild(bt);
+  }
+  bar.hidden = !groups.size;
 }
 $('placeOk').onclick = confirmPlace;
 $('placeNo').onclick = cancelPlace;
 
 // ----- shop -----
-let shopTab = 'defense';
+// The shop is one scrolling list: a section per category with what you can build now,
+// then everything locked at the very bottom, sorted by the Town Hall level it needs.
+function shopEntry(type) {
+  const isWall = type === 'wall', stored = isWall ? stashCount() : 0;
+  const have = isWall ? wallTotal() : countOf(type), lim = limitOf(type);
+  const maxed = have >= lim && !stored;
+  const nextTh = LIMITS[type].findIndex((v) => v > have) + 1;   // 0 = never more
+  return { type, stored, have, lim, maxed, nextTh, price: stored ? [0, 0, 0] : priceOf(type, 1) };
+}
+function shopCard(e) {
+  const t = TYPES[e.type];
+  const card = document.createElement('button');
+  card.className = 'card' + (e.maxed ? ' locked' : '');
+  card.innerHTML = `<div class="art"></div>
+    <div class="name">${t.name}</div>
+    <div class="meta">${e.maxed ? '' : costHTML(e.price)}<span class="count">${e.have}/${e.lim}</span></div>
+    <div class="meta"><span class="count">${e.maxed ? '' : e.stored ? e.stored + ' stored' : daysLabel(e.price[2])}</span></div>
+    ${e.maxed ? `<div class="lock ol">${e.nextTh > 0 ? 'TOWN HALL ' + e.nextTh : 'MAXED'}</div>` : ''}`;
+  card.querySelector('.art').appendChild(previewCanvas(e.type));
+  hydrateCosts(card);
+  card.onclick = () => {
+    if (e.maxed) { toast(e.nextTh > 0 ? `Upgrade the Town Hall to level ${e.nextTh}` : 'You have built all of these'); sfx('nope'); return; }
+    if (!canAfford(e.price)) { toast(`Not enough ${resName(S.gold < e.price[0] ? 'gold' : 'elixir').toLowerCase()}`); sfx('nope'); return; }
+    if (e.price[2] > 0 && builders().free <= 0) { toast('All builders are busy'); sfx('nope'); return; }
+    sfx('click');
+    beginPlace(e.type);
+  };
+  return card;
+}
 function openShop() {
   if (S.phase !== 'build') return;
   deselect();
   const m = $('modal');
-  const tabs = SHOP_TABS.map(([id, label]) => `<button class="tab" role="tab" aria-selected="${id === shopTab}" data-tab="${id}">${label}</button>`).join('');
-  m.innerHTML = `<div class="window" role="dialog" aria-label="Shop">
-    <div class="window-head"><div class="window-title ol">SHOP</div><button class="btn no close-x" id="shopClose" aria-label="Close">&#x2716;</button></div>
-    <div class="tabs" role="tablist">${tabs}</div>
-    <div class="cards" id="cards"></div></div>`;
+  m.innerHTML = `<div class="window shop-window" role="dialog" aria-label="Shop">
+    <div class="window-head"><div class="window-title">SHOP</div><button class="btn no close-x" id="shopClose" aria-label="Close">&#x2716;</button></div>
+    <div class="shop-list" id="shopList"></div></div>`;
   m.hidden = false;
   $('shopClose').onclick = closeModal;
-  m.querySelectorAll('.tab').forEach((t) => t.onclick = () => { shopTab = t.dataset.tab; openShop(); });
-  const cards = $('cards');
-  const list = SHOP_TABS.find((t) => t[0] === shopTab)[2];
-  for (const type of list) {
-    const t = TYPES[type];
-    const isWall = type === 'wall', stored = isWall ? stashCount() : 0;
-    const have = isWall ? wallTotal() : countOf(type), lim = limitOf(type);
-    const price = stored ? [0, 0, 0] : priceOf(type, 1);
-    const maxed = have >= lim && !stored;
-    const nextTh = LIMITS[type].findIndex((v) => v > have) + 1;
+  const list = $('shopList');
+  const section = (title) => { const h = document.createElement('div'); h.className = 'shop-section'; h.textContent = title; list.appendChild(h); const c = document.createElement('div'); c.className = 'cards'; list.appendChild(c); return c; };
+  // buildings picked up earlier and not placed yet
+  if ((S.inventory || []).length) {
+    const c = section('STORED');
     const card = document.createElement('button');
-    card.className = 'card' + (maxed ? ' locked' : '');
-    card.innerHTML = `<div class="art"></div>
-      <div class="name">${t.name}</div>
-      <div class="meta">${maxed ? '' : costHTML(price)}<span class="count">${have}/${lim}</span></div>
-      <div class="meta"><span class="count">${maxed ? '' : stored ? stored + ' stored' : daysLabel(price[2])}</span></div>
-      ${maxed ? `<div class="lock ol">${nextTh > 0 ? 'TOWN HALL ' + nextTh : 'MAXED'}</div>` : ''}`;
-    card.querySelector('.art').appendChild(previewCanvas(type));
-    hydrateCosts(card);
-    card.onclick = () => {
-      if (maxed) { toast(nextTh > 0 ? `Upgrade the Town Hall to level ${nextTh}` : 'You have built all of these'); sfx('nope'); return; }
-      if (!canAfford(price)) { toast(`Not enough ${resName(S.gold < price[0] ? 'gold' : 'elixir').toLowerCase()}`); sfx('nope'); return; }
-      if (price[2] > 0 && builders().free <= 0) { toast('All builders are busy'); sfx('nope'); return; }
-      sfx('click');
-      beginPlace(type);
-    };
-    cards.appendChild(card);
+    card.className = 'card';
+    card.innerHTML = `<div class="art"></div><div class="name">Stored buildings</div><div class="meta"><span class="cost">Free</span><span class="count">${S.inventory.length}</span></div><div class="meta"><span class="count">Place them again</span></div>`;
+    card.querySelector('.art').appendChild(previewCanvas(S.inventory[0].type));
+    card.onclick = () => { sfx('click'); beginPickup(false); };
+    c.appendChild(card);
   }
-  const first = m.querySelector('.tab[aria-selected="true"]'); if (first) first.focus();
+  const locked = [];
+  for (const [, label, types] of SHOP_TABS) {
+    const entries = types.map(shopEntry);
+    locked.push(...entries.filter((e) => e.maxed));
+    const open = entries.filter((e) => !e.maxed);
+    if (!open.length) continue;
+    const c = section(label);
+    for (const e of open) c.appendChild(shopCard(e));
+  }
+  if (locked.length) {
+    locked.sort((a, b) => (a.nextTh || 99) - (b.nextTh || 99));
+    const c = section('LOCKED');
+    for (const e of locked) c.appendChild(shopCard(e));
+  }
 }
 function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; }
 
@@ -2101,8 +2315,7 @@ function showPatchNotes() {
 }
 $('phase').onclick = () => { unlockAudio(); sfx('click'); showStats(); };
 for (const id of ['resGold', 'resElixir']) $(id).onclick = () => { unlockAudio(); sfx('click'); cycleResources(); };
-$('wallsBtn').onclick = () => { unlockAudio(); sfx('click'); beginRearrange(); };
-$('moveBtn').onclick = () => { unlockAudio(); sfx('click'); beginArrange(); };
+$('arrangeBtn').onclick = () => { unlockAudio(); sfx('click'); showArrangeMenu(); };
 buildSpellBar();
 $('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
 $('repairAllBtn').onclick = () => { unlockAudio(); sfx('click'); showRepairs(); };

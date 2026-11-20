@@ -45,21 +45,17 @@
     </button>
   </div>
 
-  <div class="wave ol" id="wave" hidden>
-    <canvas class="ico" data-icon="sword" width="12" height="12" style="width:18px;height:18px"></canvas>
-    <span id="waveText">ENEMIES 0</span>
-  </div>
-
   <!-- Fight on the left; everything for building on the right -->
   <div class="bottom-left">
     <button class="btn war square" id="defendBtn" aria-label="Start the night"><canvas class="ico" data-icon="moon" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Fight</span></button>
+    <div class="wave square-tile" id="wave" hidden aria-live="polite"><span class="wave-num" id="waveText">0</span><span class="sq-label">Raiders</span></div>
+    <button class="btn shop square zoom-btn" id="zoomBtn" aria-label="Zoom: drag left or right" title="Drag left or right to zoom, tap to reset"><canvas class="ico" data-icon="zoom" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label" id="zoomLabel">Zoom</span></button>
   </div>
 
   <div class="bottom-right">
     <button class="btn round wood" id="speedBtn" hidden aria-label="Game speed">x1</button>
-    <button class="btn go square" id="repairAllBtn" hidden><span class="sq-badge" id="repairAllText">0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Repair</span></button>
-    <button class="btn wood square" id="wallsBtn" hidden aria-label="Rearrange all walls" title="Rearrange all walls"><canvas class="ico" data-icon="wall" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Walls</span></button>
-    <button class="btn wood square" id="moveBtn" hidden aria-label="Move buildings" title="Move buildings"><canvas class="ico" data-icon="move" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Move</span></button>
+    <button class="btn go square" id="repairAllBtn" hidden title="Repairs and upgrades"><span class="sq-badge" id="repairAllText" hidden>0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label" id="workLabel">Upgrade</span></button>
+    <button class="btn wood square" id="arrangeBtn" hidden aria-label="Arrange: move or pick up buildings and walls" title="Move or pick up buildings and walls"><canvas class="ico" data-icon="move" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Arrange</span></button>
     <button class="btn square shop" id="shopBtn" aria-label="Shop"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Shop</span></button>
   </div>
 
@@ -67,6 +63,7 @@
     <div class="sel" id="sel" hidden></div>
     <div class="spells" id="spellBar" hidden aria-label="Spells"></div>
     <div class="place-tip" id="placeTip" hidden></div>
+    <div class="inv-bar" id="invBar" hidden aria-label="Buildings to place"></div>
     <div class="place-bar" id="placeBar" hidden>
       <button class="btn no solid" id="placeNo" aria-label="Cancel"><canvas class="ico" data-icon="cross" width="12" height="12" style="width:24px;height:24px"></canvas></button>
       <button class="btn go solid" id="placeOk" aria-label="Confirm"><canvas class="ico" data-icon="check" width="12" height="12" style="width:26px;height:26px"></canvas></button>

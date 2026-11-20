@@ -113,13 +113,14 @@ b { font-weight: 700; }
 .res .ico { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; z-index: 1;
   background: var(--panel-solid); border: 2px solid var(--c); border-radius: 50%; box-sizing: border-box; padding: 3px; }
 
-.wave {
-  position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-family: var(--head); font-size: 16px; font-weight: 800; letter-spacing: 1px;
-  background: var(--panel); border: 2px solid var(--red); border-radius: 12px; color: #fff; box-shadow: 0 0 12px rgba(255, 59, 92, .45);
-}
+/* raiders left: a tile in the bottom row, same size as the buttons */
+.square-tile { width: 62px; height: 62px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 14px; }
+.wave { background: var(--panel); border: 2px solid var(--red); color: #fff; box-shadow: 0 0 12px rgba(255, 59, 92, .45); }
+.wave-num { font-family: var(--head); font-size: 22px; font-weight: 800; line-height: 1; text-shadow: 0 0 8px rgba(255, 59, 92, .8); }
+.zoom-btn { touch-action: none; }
+.zoom-btn.dragging { box-shadow: 0 0 18px rgba(53, 240, 255, .8); }
 
-/* bottom row: Fight, Repair and Walls on the left, Shop on the right, all side by side */
+/* bottom row: Fight (or raiders left) and Zoom on the left; Upgrade, Arrange and Shop on the right */
 .bottom-left, .bottom-right {
   position: absolute; bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   display: flex; flex-direction: row; gap: 10px; align-items: flex-end;
@@ -130,6 +131,32 @@ b { font-weight: 700; }
   position: absolute; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 8px; width: min(calc(100vw - 20px), 400px);
 }
+/* while placing, the corner buttons are gone, so the tip and the confirm/cancel buttons sit right at the bottom */
+body.placing .bottom-center { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: min(calc(100vw - 180px), 400px); }
+.sq-badge.good { background: var(--green); color: #07070f; box-shadow: 0 0 8px var(--green); }
+
+/* inventory bar while placing picked-up buildings */
+.inv-bar { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: 100%; }
+.inv-item { position: relative; width: 48px; height: 48px; padding: 0; display: grid; place-items: center; cursor: pointer;
+  background: var(--panel); border: 2px solid var(--line); border-radius: 10px; }
+.inv-item.on { border-color: var(--cyan); box-shadow: 0 0 10px rgba(53, 240, 255, .5); }
+.inv-count { position: absolute; bottom: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px;
+  background: var(--cyan); color: #07070f; font-size: 11px; font-weight: 700; display: grid; place-items: center; }
+
+/* Arrange menu */
+.arrange .popup-body { justify-items: stretch; }
+.menu-list { display: grid; gap: 8px; }
+.menu-item { display: grid; gap: 2px; text-align: left; padding: 10px 12px; cursor: pointer; font: inherit; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.menu-item b { color: #fff; font-size: 15px; }
+.menu-item span { color: var(--muted); font-size: 13px; }
+.menu-item:hover, .menu-item:focus-visible { border-color: var(--cyan); box-shadow: 0 0 10px rgba(53, 240, 255, .35); outline: none; }
+
+/* shop: one scrolling list with sections */
+.shop-list { overflow-y: auto; overscroll-behavior: contain; padding-bottom: 8px; }
+.shop-section { font-family: var(--head); font-weight: 800; font-size: 13px; letter-spacing: 2px; color: var(--cyan); padding: 14px 16px 0; text-shadow: 0 0 8px rgba(53, 240, 255, .5); }
+.shop-list .cards { overflow: visible; padding: 10px 14px 4px; }
+.rep-section { font-family: var(--head); font-weight: 800; font-size: 12.5px; letter-spacing: 2px; color: var(--cyan); padding: 6px 2px 0; }
 
 /* ---------- building panel ---------- */
 .sel {
@@ -280,7 +307,9 @@ b { font-weight: 700; }
 
 /* narrow screens */
 @media (max-width: 640px) {
-  .wave { top: calc(96px + env(safe-area-inset-top, 0px)); }
+  body.placing .bottom-center { width: calc(100vw - 20px); }
+  body.placing .zoom-btn { display: none; }
+  .square-tile { width: 54px; height: 54px; }
   .btn.square { width: 54px; height: 54px; }
   .bottom-left, .bottom-right { gap: 7px; }
   .ring { width: 56px; }

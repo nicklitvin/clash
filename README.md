@@ -23,11 +23,11 @@ screen and works offline.
 - After each night, a summary shows what your mines and pumps earned before
   you start the next day.
 - Tap any building to see its stats, repair it or upgrade it. Damage stays
-  until you repair it. **Repair** (bottom right) lists every damaged building,
-  with a button for each one and one for all of them; it works mid-raid too.
-- **Walls** (bottom right) picks up every wall so you can lay them out again.
-  Walls you leave unplaced are stored and free to place later.
-- **Move** (bottom right) lets you drag any building to a new spot.
+  until you repair it. **Upgrade** (bottom right) lists every repair and every
+  upgrade you can make, with a button for each; at night it shows repairs only.
+- **Arrange** (bottom right): move buildings, pick up all walls, or pick up all
+  buildings and place them back from an inventory bar. Anything left unplaced
+  is stored and can be placed later from the shop.
 - You start with one builder; build more Builder's Huts to work on several
   projects at once.
 - Raiders walk around walls, or break through when the way round is too long.
@@ -40,7 +40,8 @@ screen and works offline.
   are at the bottom of that window.
 - Tap a resource bar to cycle through resource styles (Gold & Energy, Gold &
   Plasma, Gold & Crystal, Credits & Fuel).
-- Zoom with the mouse wheel, a pinch, or the + / − keys.
+- Zoom with the Zoom button (press and drag left or right), the mouse wheel,
+  a pinch, a double tap on the map, or the + / − keys.
 - The moment your Town Hall falls, the game is over. The village saves itself
   every day.
 - Neon look: glowing outlines on a dark grid.
