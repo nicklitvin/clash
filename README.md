@@ -22,12 +22,14 @@ screen and works offline.
 - **Night: fight.** A wave attacks. Your defenses fight on their own.
 - After each night, a summary shows what your mines and pumps earned before
   you start the next day.
+- Every menu slides up from the bottom; swipe it down (or tap outside) to
+  close it.
 - Tap any building to see its stats, repair it or upgrade it. Damage stays
-  until you repair it. **Upgrade** (bottom right) lists every repair and every
-  upgrade you can make, with a button for each; at night it shows repairs only.
+  until you repair it. **Build** (bottom right) opens one menu with repairs,
+  upgrades and new buildings; at night it shows repairs only.
 - **Arrange** (bottom right): move buildings, pick up all walls, or pick up all
   buildings and place them back from an inventory bar. Anything left unplaced
-  is stored and can be placed later from the shop.
+  is stored and can be placed later from the Build menu.
 - You start with one builder; build more Builder's Huts to work on several
   projects at once.
 - Raiders walk around walls, or break through when the way round is too long.
@@ -38,8 +40,7 @@ screen and works offline.
   evenly across your storages. Tap a building to see how much it holds.
 - Tap the Day/Night box for village stats; the version number and patch notes
   are at the bottom of that window.
-- Tap a resource bar to cycle through resource styles (Gold & Energy, Gold &
-  Plasma, Gold & Crystal, Credits & Fuel).
+- Resources are Gold (coin) and Energy (green lightning bolt).
 - Zoom with the Zoom button (press and drag left or right), the mouse wheel,
   a pinch, a double tap on the map, or the + / − keys.
 - The moment your Town Hall falls, the game is over. The village saves itself
@@ -64,17 +65,11 @@ When you ship a change, bump `GAME_VERSION` and add an entry to
 There are no build steps and no internet dependencies, so the folder can be
 wrapped as-is.
 
-## Mobile apps
+## iOS app
 
-Use [Capacitor](https://capacitorjs.com) for iOS and Android. Electron only
-builds desktop apps.
+`ios/` holds a native SwiftUI app that runs this game full screen, offline, with
+native haptics and saves kept in iOS storage. See [ios/README.md](ios/README.md)
+for how to build it with Xcode.
 
-```sh
-npm init -y
-npm install @capacitor/core @capacitor/cli @capacitor/android @capacitor/ios
-npx cap init Clash com.example.clash --web-dir .
-npx cap add android   # and/or: npx cap add ios
-npx cap open android
-```
-
-For a desktop app, point an Electron `BrowserWindow` at `index.html`.
+For Android, [Capacitor](https://capacitorjs.com) can wrap the same folder
+(`npx cap init Clash com.example.clash --web-dir .`, then `npx cap add android`).

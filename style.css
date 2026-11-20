@@ -101,7 +101,7 @@ b { font-weight: 700; }
   position: absolute; top: calc(8px + env(safe-area-inset-top, 0px)); right: calc(8px + env(safe-area-inset-right, 0px));
   display: flex; flex-direction: column; gap: 7px; align-items: flex-end;
 }
-.res { --c: var(--res1); position: relative; width: min(44vw, 200px); height: 32px; padding: 0; border: 0; background: none; cursor: pointer; font: inherit; }
+.res { --c: var(--res1); position: relative; width: min(44vw, 200px); height: 32px; padding: 0; border: 0; background: none; font: inherit; }
 .res.elixir { --c: var(--res2); }
 .res .track {
   position: absolute; inset: 2px 0 2px 14px; background: var(--panel); border: 2px solid var(--c); border-radius: 14px; overflow: hidden;
@@ -155,6 +155,9 @@ body.placing .bottom-center { bottom: calc(12px + env(safe-area-inset-bottom, 0p
 /* shop: one scrolling list with sections */
 .shop-list { overflow-y: auto; overscroll-behavior: contain; padding-bottom: 8px; }
 .shop-section { font-family: var(--head); font-weight: 800; font-size: 13px; letter-spacing: 2px; color: var(--cyan); padding: 14px 16px 0; text-shadow: 0 0 8px rgba(53, 240, 255, .5); }
+.shop-section.with-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-right: 14px; }
+.shop-section .btn { font-family: var(--font); letter-spacing: 0; text-shadow: none; }
+.shop-list .rep-list { max-height: none; overflow: visible; padding: 10px 14px 4px; }
 .shop-list .cards { overflow: visible; padding: 10px 14px 4px; }
 .rep-section { font-family: var(--head); font-weight: 800; font-size: 12.5px; letter-spacing: 2px; color: var(--cyan); padding: 6px 2px 0; }
 
@@ -328,3 +331,21 @@ body.placing .bottom-center { bottom: calc(12px + env(safe-area-inset-bottom, 0p
   .card .art canvas { width: 108px !important; height: 90px !important; }
 }
 @media (prefers-reduced-motion: reduce) { .res .fill, .toast { transition: none; } }
+
+/* ---------- bottom sheets: every window slides up from the bottom; swipe down to close ---------- */
+.modal.sheet-modal { place-items: end center; padding: 0 max(0px, env(safe-area-inset-right, 0px)) 0 max(0px, env(safe-area-inset-left, 0px)); }
+.window.sheet {
+  border-radius: 18px 18px 0 0; border-bottom: none; max-height: 90vh; max-height: 90dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px); animation: sheetUp .22s cubic-bezier(.2, .8, .3, 1);
+  transition: transform .2s ease-out; will-change: transform;
+}
+.popup.sheet { width: min(100%, 480px); }
+.shop-window.sheet { width: min(100%, 760px); height: 82vh; height: 82dvh; }
+.sheet-grab { display: grid; place-items: center; height: 18px; padding-top: 6px; cursor: grab; touch-action: none; flex: none; }
+.sheet-grab span { width: 42px; height: 5px; border-radius: 3px; background: rgba(170, 177, 214, .55); }
+.sheet-grab.locked span { opacity: .25; }
+.sheet .window-head { touch-action: none; cursor: grab; }
+.sheet .window-head .btn { cursor: pointer; }
+.sel-head { touch-action: none; }
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .window.sheet { animation: none; } }

@@ -83,13 +83,24 @@ const UNITS = {
   archer: { name: 'Archer', hp: 22, dmg: 7, rate: 1, range: 3.4, speed: 1.8, space: 1, sprite: 'arch', ranged: true },
   goblin: { name: 'Goblin', hp: 28, dmg: 11, rate: 1, range: 0.6, speed: 2.6, space: 1, sprite: 'gob', pref: 'resource' },
   giant: { name: 'Giant', hp: 330, dmg: 14, rate: 1.6, range: 0.8, speed: 1.0, space: 5, sprite: 'giant', pref: 'defense' },
-  breaker: { name: 'Wall Breaker', hp: 22, dmg: 650, rate: 1, range: 0.5, speed: 2.4, space: 2, sprite: 'wb', pref: 'wall', bomb: true },
+  breaker: { name: 'Wall Breaker', hp: 22, dmg: 650, rate: 1, range: 0.5, speed: 2.4, space: 2, sprite: 'wb', bomb: true },
   dragon: { name: 'Dragon', hp: 1000, dmg: 55, rate: 1.4, range: 2.4, speed: 1.15, space: 20, sprite: 'drag', ranged: true, fire: true, splash: 1.1 },
 };
 
 // ---------- version and patch notes (newest first) ----------
-const GAME_VERSION = '0.9.0';
+const GAME_VERSION = '0.10.0';
 const PATCH_NOTES = [
+  { v: '0.10.0', date: 'Nov 20, 2026', notes: [
+    'One Build menu for repairs, upgrades and new buildings (replaces Shop and Upgrade).',
+    'Every menu now slides up from the bottom. Swipe it down, or tap outside, to close it. The building panel closes with a swipe down too.',
+    'A destroyed Builder\'s Hut gives no builder until you repair it.',
+    'Raiders now appear right at the edge of the grid, arrive within a few seconds, and only attack from inside the grid.',
+    'The Wall Breaker no longer hunts walls only: it heads for your buildings and blows up any wall in its way.',
+    'Starting a new village now clears everything from the last game.',
+    'Resources are Gold and Energy only.',
+    'New neon app icon.',
+    'There is now an iOS app (see ios/ in the project).',
+  ] },
   { v: '0.9.0', date: 'Nov 20, 2026', notes: [
     'The shop is one scrolling list with sections. Locked items sit at the bottom, sorted by the Town Hall level they need.',
     'New Arrange button (replaces Walls and Move): move buildings, pick up all walls, or pick up all buildings.',
@@ -208,6 +219,19 @@ let fieldCache = new Map(), fieldVersion = 0;
 let blocked = new Int32Array(N * N);   // 0 free, building id otherwise
 let spellArmed = null, hover = null, spellCd = { lightning: 0, freeze: 0, heal: 0 };
 
+// start over cleanly: no leftover raiders, shots, effects, selection or placement from the last game
+function startNewVillage() {
+  units = []; shots = []; fx = []; texts = []; spawnQueue = []; flags = [];
+  raidTime = 0; buildTimer = 0; speed = 1;
+  selectedId = null; placing = null; spellArmed = null; hover = null;
+  for (const k in spellCd) spellCd[k] = 0;
+  canvas.classList.remove('aiming');
+  $('sel').hidden = true;
+  newGame();
+  rebuildBlocked();
+  centerOn(15, 15);
+  refreshUI();
+}
 function newGame() {
   S = { day: 1, phase: 'build', gold: 1000, elixir: 1000, nextId: 1, buildings: [], over: false, spells: { lightning: 0, heal: 0, freeze: 0 }, wallStash: [] };
   add('townhall', 13, 13, 1);
@@ -237,9 +261,10 @@ function levelCap(type) {
   return Math.min(TYPES[type].max, thLevel() + 1);
 }
 function builders() {
-  const total = S.buildings.filter((b) => b.type === 'builder' && b.lvl >= 1).length;
+  // a destroyed Builder's Hut gives no builder until it is repaired
+  const total = S.buildings.filter((b) => b.type === 'builder' && b.lvl >= 1 && !b.destroyed).length;
   const busy = S.buildings.filter((b) => b.cons).length;
-  return { total, busy, free: total - busy };
+  return { total, busy, free: Math.max(0, total - busy) };
 }
 function capOf(res) {
   let cap = TYPES.townhall.cap[thLevel() - 1];
@@ -361,7 +386,7 @@ function getField(b, range) {
   // count too (entering them means breaking them), so a target hemmed in on every side is still reachable.
   for (let y = -MARGIN; y < GRID + MARGIN; y++) for (let x = -MARGIN; x < GRID + MARGIN; x++) {
     const i = cellIndex(x, y);
-    if (blocked[i] === b.id) continue;
+    if (blocked[i] === b.id || x < 0 || y < 0 || x >= GRID || y >= GRID) continue;   // raiders attack from inside the grid only
     if (distToRect(x + 0.5, y + 0.5, b) <= range + 0.45) { dist[i] = 0; push(i, 0); }
   }
   const cost = (i) => {
@@ -421,7 +446,7 @@ function waveFor(day) {
   return list;
 }
 function edgePoint() {
-  const side = Math.floor(Math.random() * 4), t = rnd(2, GRID - 2), o = -MARGIN + 1.5;
+  const side = Math.floor(Math.random() * 4), t = rnd(3, GRID - 3), o = -0.8;   // just outside the grid edge
   if (side === 0) return { x: t, y: o };
   if (side === 1) return { x: GRID - o, y: t };
   if (side === 2) return { x: t, y: GRID - o };
@@ -445,7 +470,10 @@ function startRaid() {
   flags = points.map((p) => ({ ...p }));
   list.forEach((type, i) => {
     const g = i % groups, p = points[g];
-    spawnQueue.push({ type, at: 2 + Math.floor(i / groups) * 0.8 + g * 2.5 + rnd(0, 0.3), x: p.x + rnd(-1.2, 1.2), y: p.y + rnd(-1.2, 1.2) });
+    const along = rnd(-1.5, 1.5), out = rnd(0, 0.5);   // spread along the edge, never deeper than a tile outside
+    const horiz = p.y < 0 || p.y > GRID;
+    spawnQueue.push({ type, at: 0.8 + Math.floor(i / groups) * 0.4 + g * 1 + rnd(0, 0.2),
+      x: horiz ? clamp(p.x + along, 1, GRID - 1) : p.x + (p.x < 0 ? -out : out), y: horiz ? p.y + (p.y < 0 ? -out : out) : clamp(p.y + along, 1, GRID - 1) });
   });
   spawnQueue.sort((a, b) => a.at - b.at);
   sfx('horn');
@@ -518,7 +546,7 @@ function showNightSummary() {
       ${row('gold', resName('gold'), '+' + fmt(S.gold - before.g))}
       ${row('elixir', resName('elixir'), '+' + fmt(S.elixir - before.e))}
       ${doneRows}
-    </div>`, [[`Start day ${S.day + 1}`, 'go', () => { closeModal(); startBuild(); }]]);
+    </div>`, [[`Start day ${S.day + 1}`, 'go', () => { closeModal(); startBuild(); }]], '', { dismiss: () => { closeModal(); startBuild(); } });
 }
 function startBuild() {
   S.day++;
@@ -594,9 +622,6 @@ function chooseTarget(u) {
   } else if (u.d.pref === 'defense') {
     const r = nonWall.filter((b) => def(b).cat === 'defense');
     if (r.length) pool = r;
-  } else if (u.d.pref === 'wall') {
-    const r = alive.filter((b) => b.type === 'wall');
-    if (r.length) pool = r;
   }
   let best = null, bd = Infinity;
   for (const b of pool) { const d = distToRect(u.x, u.y, b); if (d < bd) { bd = d; best = b; } }
@@ -618,7 +643,8 @@ function updateUnit(u, dt) {
   }
   const range = d.range;
   // close enough to hit (matches the goal cells of the path field, so no one walks over anything)
-  if (distToRect(u.x, u.y, u.target) <= range + 0.45) { attack(u, u.target); return; }
+  const inside = u.x >= 0 && u.y >= 0 && u.x < GRID && u.y < GRID;
+  if (inside && distToRect(u.x, u.y, u.target) <= range + 0.45) { attack(u, u.target); return; }
   u.chkT = (u.chkT || 0) + dt;
   if (u.chkT > 2.5) {
     if (Math.hypot(u.x - (u.cx0 ?? u.x + 9), u.y - (u.cy0 ?? 0)) < 0.3) { unstick(u); if (u.wall) return; }
@@ -686,7 +712,7 @@ function attack(u, b) {
   if (d.bomb) {
     for (const o of S.buildings) {
       if (o.destroyed) continue;
-      if (distToRect(u.x, u.y, o) <= 1.4) hurtBuilding(o, o.type === 'wall' ? d.dmg : 16, u);
+      if (distToRect(u.x, u.y, o) <= 1.4) hurtBuilding(o, o.type === 'wall' ? d.dmg : 80, u);
     }
     fx.push({ kind: 'boom', x: u.x, y: u.y, r: 1.4, t: 0, life: 0.4 });
     burst(u.x, u.y, 14, ['#f8a830', '#f8e070', '#5f5f75']);
@@ -933,22 +959,11 @@ function worldText(str, cx, y, col, size) {
 const sx = (x) => x * T - cam.x + W / 2;
 const sy = (x, y) => y * T - cam.y + H / 2;
 
-// ---------- resource styles: tap a resource bar to cycle through them ----------
-// Internally the two resources are still 'gold' and 'elixir'; these only change names, colours and icons.
-const RES_STYLES = [
-  { id: 'energy', gold: { name: 'Gold', icon: 'coin', col: '#ffd23f' }, elixir: { name: 'Energy', icon: 'bolt', col: '#3dffa8' },
-    names: { goldmine: 'Gold Mine', goldstore: 'Gold Vault', elixir: 'Energy Pump', elixstore: 'Battery' } },
-  { id: 'plasma', gold: { name: 'Gold', icon: 'coin', col: '#ffd23f' }, elixir: { name: 'Plasma', icon: 'orb', col: '#ff4fd8' },
-    names: { goldmine: 'Gold Mine', goldstore: 'Gold Vault', elixir: 'Plasma Pump', elixstore: 'Plasma Tank' } },
-  { id: 'crystal', gold: { name: 'Gold', icon: 'coin', col: '#ffd23f' }, elixir: { name: 'Crystal', icon: 'gem', col: '#b48cff' },
-    names: { goldmine: 'Gold Mine', goldstore: 'Gold Vault', elixir: 'Crystal Drill', elixstore: 'Crystal Vault' } },
-  { id: 'fuel', gold: { name: 'Credits', icon: 'hexcoin', col: '#ffb13d' }, elixir: { name: 'Fuel', icon: 'drop', col: '#a6ff3d' },
-    names: { goldmine: 'Credit Mint', goldstore: 'Credit Vault', elixir: 'Fuel Pump', elixstore: 'Fuel Tank' } },
-];
-const RES_KEY = 'clash-resources';
-let resStyle = 0;
-try { resStyle = clamp(+localStorage.getItem(RES_KEY) || 0, 0, RES_STYLES.length - 1); } catch (e) { /* ignore */ }
-const RS = () => RES_STYLES[resStyle];
+// ---------- resources: Gold (a coin) and Energy (a green lightning bolt) ----------
+// Internally the two resources are still called 'gold' and 'elixir'.
+const RES_STYLE = { gold: { name: 'Gold', icon: 'coin', col: '#ffd23f' }, elixir: { name: 'Energy', icon: 'bolt', col: '#3dffa8' },
+  names: { goldmine: 'Gold Mine', goldstore: 'Gold Vault', elixir: 'Energy Pump', elixstore: 'Battery' } };
+const RS = () => RES_STYLE;
 const resName = (key) => RS()[key].name;
 const resCol = (key) => RS()[key].col;
 function applyResStyle() {
@@ -1485,7 +1500,7 @@ window.addEventListener('pagehide', () => { if (S && S.phase === 'build') save()
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('gesturestart', (e) => e.preventDefault());
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { if (!$('modal').hidden) closeModal(); else if (spellArmed) disarmSpell(); else if (placing) cancelPlace(); else deselect(); }
+  if (e.key === 'Escape') { if (!$('modal').hidden) { if (sheetDismiss) dismissSheet(sheetDismiss); } else if (spellArmed) disarmSpell(); else if (placing) cancelPlace(); else deselect(); }
   if ((e.key === '+' || e.key === '=') && $('modal').hidden) zoomBy(1);
   if ((e.key === '-' || e.key === '_') && $('modal').hidden) zoomBy(-1);
   if (S && S.phase === 'raid' && !e.repeat && $('modal').hidden) { const k = ['1', '2', '3'].indexOf(e.key); if (k >= 0) armSpell(Object.keys(SPELLS)[k]); }
@@ -1592,7 +1607,6 @@ function refreshUI() {
     $(res + 'Cap').textContent = 'Max ' + fmt(cap);
     $(res + 'Fill').style.width = clamp((S[res] / cap) * 100, 0, 100) + '%';
   }
-  $('shopBtn').hidden = !building || !!placing;
   $('arrangeBtn').hidden = !building || !!placing;
   document.body.classList.toggle('placing', !!placing);
   $('defendBtn').hidden = !building || !!placing;
@@ -1686,7 +1700,7 @@ function repair(b) {
   fixBuilding(b);
   toast(`${def(b).name} repaired`);
   sfx('build'); if (S.phase === 'build') save(); refreshUI(); if (selectedId) renderSel(true);
-  if (!$('modal').hidden && $('repairList')) showRepairs();
+  if (!$('modal').hidden && $('buildList')) openBuild(true);
 }
 function repairAll() {
   const list = damaged().sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || repairCost(a) - repairCost(b));
@@ -1702,15 +1716,15 @@ function repairAll() {
   if (!fixed) { toast(`Not enough ${g1}`); sfx('nope'); return; }
   toast(fixed === list.length ? `Repaired ${fixed} building${fixed > 1 ? 's' : ''} for ${fmt(spent)} ${g1}` : `Repaired ${fixed} of ${list.length}. Not enough ${g1} for the rest.`);
   sfx('build'); if (S.phase === 'build') save(); refreshUI(); if (selectedId) renderSel(true);
-  if (!$('modal').hidden && $('repairList')) showRepairs();
+  if (!$('modal').hidden && $('buildList')) openBuild(true);
 }
-// Repairs & upgrades: what needs fixing, and (by day) everything that can be upgraded, each with its own button
-function showRepairs() {
+// The Build menu: repairs, upgrades and new buildings in one bottom sheet (at night: repairs only)
+function showRepairs() { openBuild(true); }
+function repairsAndUpgradesHTML() {
   const dmg = damaged().sort((a, b) => (b.type === 'townhall') - (a.type === 'townhall') || missingHp(b) / maxHp(b) - missingHp(a) / maxHp(a));
   const g1 = resName('gold').toLowerCase();
   const thumbRow = (b, info, btn) => `<div class="rep-row" data-id="${b.id}"><span class="rep-pic"></span><div class="rep-info">${info}</div>${btn}</div>`;
   const rows = [];
-  // --- repairs (walls grouped into one row so a long wall line doesn't flood the list)
   const walls = dmg.filter((b) => b.type === 'wall');
   for (const b of dmg.filter((b) => b.type !== 'wall')) {
     const f = b.destroyed ? 0 : b.hp / maxHp(b), c = repairCost(b);
@@ -1723,9 +1737,8 @@ function showRepairs() {
     rows.push(`<div class="rep-row"><span class="rep-pic" data-ico="wall" data-px="30"></span><div class="rep-info"><div class="rep-name">Walls ×${walls.length}</div></div>
       <button class="btn mini go" data-fixwalls="1">Repair <span class="cost" data-cost="gold">${fmt(wc)}</span></button></div>`);
   }
-  const repHTML = rows.length ? `<div class="rep-section">REPAIRS</div>${rows.join('')}` : '';
-  // --- upgrades (by day only)
-  let upHTML = '';
+  const total = dmg.reduce((a, b) => a + repairCost(b), 0);
+  let html = rows.length ? `<div class="shop-section with-btn"><span>REPAIRS</span>${dmg.length > 1 ? `<button class="btn mini go" data-fixall="1">Repair all <span class="cost" data-cost="gold">${fmt(total)}</span></button>` : ''}</div><div class="rep-list">${rows.join('')}</div>` : '';
   if (S.phase === 'build') {
     const ups = S.buildings.filter((b) => b.type !== 'wall' && b.lvl >= 1 && !b.cons && b.lvl < def(b).max && def(b).cost[b.lvl])
       .map((b) => ({ b, why: upgradeBlock(b) }))
@@ -1735,7 +1748,6 @@ function showRepairs() {
       return thumbRow(b, `<div class="rep-name">${def(b).name}</div><div class="rep-hp">Lv ${b.lvl} → ${b.lvl + 1} · ${daysLabel(p[2])}</div>`,
         `<button class="btn mini go${why ? ' is-disabled' : ''}" ${why ? `data-why="${why}"` : `data-up="${b.id}"`}>${costHTML(p)}</button>`);
     });
-    // walls: one row per level, upgrading as many as you can afford
     const byLvl = new Map();
     for (const w of S.buildings) if (w.type === 'wall' && w.lvl >= 1 && !w.destroyed && w.lvl < TYPES.wall.max) byLvl.set(w.lvl, (byLvl.get(w.lvl) || 0) + 1);
     for (const [lvl, n] of [...byLvl].sort((a, b) => a[0] - b[0])) {
@@ -1743,25 +1755,24 @@ function showRepairs() {
       urows.push(`<div class="rep-row"><span class="rep-pic" data-ico="wall" data-px="30"></span><div class="rep-info"><div class="rep-name">Walls ×${n}</div><div class="rep-hp">Lv ${lvl} → ${lvl + 1} · each</div></div>
         <button class="btn mini go${why ? ' is-disabled' : ''}" ${why ? `data-why="${why}"` : `data-upwalls="${lvl}"`}>${costHTML(price)}</button></div>`);
     }
-    if (urows.length) upHTML = `<div class="rep-section">UPGRADES</div>${urows.join('')}`;
+    if (urows.length) html += `<div class="shop-section">UPGRADES</div><div class="rep-list">${urows.join('')}</div>`;
   }
-  if (!repHTML && !upHTML) { closeModal(); toast('Nothing to repair or upgrade right now'); return; }
-  const total = dmg.reduce((a, b) => a + repairCost(b), 0);
-  const btns = dmg.length ? [[`Repair all <span class="cost" data-cost="gold">${fmt(total)}</span>`, 'go', () => repairAll()]] : [];
-  popup(S.phase === 'build' ? 'UPGRADES' : 'REPAIRS', `<div class="rep-list" id="repairList">${repHTML}${upHTML}</div>`, [...btns, ['Close', 'wood', closeModal]], 'repairs');
-  const m = $('modal');
-  m.querySelectorAll('.rep-row[data-id]').forEach((row) => row.querySelector('.rep-pic').appendChild(buildingThumb(byId(+row.dataset.id), 36)));
-  m.querySelectorAll('[data-why]').forEach((bt) => { bt.onclick = () => { toast(bt.dataset.why); sfx('nope'); }; });
-  m.querySelectorAll('[data-fix]').forEach((bt) => { bt.onclick = () => repair(byId(+bt.dataset.fix)); });
-  m.querySelectorAll('[data-up]').forEach((bt) => { bt.onclick = () => { upgrade(byId(+bt.dataset.up)); showRepairs(); }; });
-  m.querySelectorAll('[data-upwalls]').forEach((bt) => { bt.onclick = () => { upgradeWalls(+bt.dataset.upwalls); showRepairs(); }; });
-  const fw = m.querySelector('[data-fixwalls]');
-  if (fw) fw.onclick = () => {
+  return html;
+}
+function wireBuildRows(root) {
+  const g1 = resName('gold').toLowerCase();
+  root.querySelectorAll('.rep-row[data-id]').forEach((row) => row.querySelector('.rep-pic').appendChild(buildingThumb(byId(+row.dataset.id), 36)));
+  root.querySelectorAll('[data-why]').forEach((bt) => { bt.onclick = () => { toast(bt.dataset.why); sfx('nope'); }; });
+  root.querySelectorAll('[data-fix]').forEach((bt) => { bt.onclick = () => repair(byId(+bt.dataset.fix)); });
+  root.querySelectorAll('[data-fixall]').forEach((bt) => { bt.onclick = () => repairAll(); });
+  root.querySelectorAll('[data-up]').forEach((bt) => { bt.onclick = () => { upgrade(byId(+bt.dataset.up)); openBuild(true); }; });
+  root.querySelectorAll('[data-upwalls]').forEach((bt) => { bt.onclick = () => { upgradeWalls(+bt.dataset.upwalls); openBuild(true); }; });
+  root.querySelectorAll('[data-fixwalls]').forEach((bt) => { bt.onclick = () => {
     let fixed = 0;
     for (const w of damaged().filter((b) => b.type === 'wall')) { const c = repairCost(w); if (S.gold < c) break; S.gold -= c; fixBuilding(w); fixed++; }
     if (!fixed) { toast(`Not enough ${g1}`); sfx('nope'); return; }
-    sfx('build'); if (S.phase === 'build') save(); refreshUI(); showRepairs();
-  };
+    sfx('build'); if (S.phase === 'build') save(); refreshUI(); openBuild(true);
+  }; });
 }
 // upgrade every wall of one level, as many as you can afford (walls upgrade instantly)
 function upgradeWalls(lvl) {
@@ -1774,13 +1785,13 @@ function upgradeWalls(lvl) {
   if (!n) { toast(`Not enough ${resName('gold').toLowerCase()}`); sfx('nope'); return; }
   toast(`${n} wall${n > 1 ? 's' : ''} upgraded to level ${lvl + 1}`); sfx('build'); save(); refreshUI();
 }
-// the Upgrade button: always there by day (repairs + upgrades); at night only when something needs repair.
+// the Build button: always there by day (repairs, upgrades, new buildings); at night only when something needs repair.
 // Its badge counts damaged buildings (red) or, if nothing is damaged, upgrades you can start now (green).
 function updateRepairAll() {
-  const btn = $('repairAllBtn'), badge = $('repairAllText');
+  const btn = $('buildBtn'), badge = $('buildBadge');
   const list = S.phase === 'build' || S.phase === 'raid' ? damaged() : [];
   btn.hidden = !!placing || (S.phase === 'build' ? false : !list.length);
-  $('workLabel').textContent = S.phase === 'build' ? 'Upgrade' : 'Repair';
+  $('buildLabel').textContent = S.phase === 'build' ? 'Build' : 'Repair';
   if (btn.hidden) return;
   const ready = S.phase === 'build' ? S.buildings.filter((b) => b.type !== 'wall' && b.lvl >= 1 && !b.cons && b.lvl < def(b).max && def(b).cost[b.lvl] && !upgradeBlock(b)).length : 0;
   badge.hidden = !list.length && !ready;
@@ -1878,6 +1889,7 @@ function renderSel(force) {
   el.hidden = false;
   updateSelLive(b);
   $('selClose').onclick = deselect;
+  swipeToClose(el, el.querySelector('.sel-head'), deselect);
   el.querySelectorAll('[data-brew]').forEach((bt) => { bt.onclick = () => brew(bt.dataset.brew); });
   el.querySelectorAll('[data-why]').forEach((bt) => { bt.onclick = () => { toast(bt.dataset.why); sfx('nope'); }; });
   const rp = $('repairBtn'); if (rp && !rp.dataset.why) rp.onclick = () => repair(b);
@@ -2196,16 +2208,22 @@ function shopCard(e) {
   };
   return card;
 }
-function openShop() {
-  if (S.phase !== 'build') return;
-  deselect();
+function openShop() { openBuild(); }
+function openBuild(keepScroll) {
+  const night = S.phase !== 'build';
+  if (night && !damaged().length) { closeModal(); return; }
   const m = $('modal');
-  m.innerHTML = `<div class="window shop-window" role="dialog" aria-label="Shop">
-    <div class="window-head"><div class="window-title">SHOP</div><button class="btn no close-x" id="shopClose" aria-label="Close">&#x2716;</button></div>
-    <div class="shop-list" id="shopList"></div></div>`;
+  const old = $('buildList'), scrollTop = keepScroll && old ? old.scrollTop : 0;
+  deselect();
+  m.innerHTML = `<div class="window shop-window" role="dialog" aria-label="Build">
+    <div class="window-head"><div class="window-title">${night ? 'REPAIR' : 'BUILD'}</div><button class="btn no close-x" id="shopClose" aria-label="Close">&#x2716;</button></div>
+    <div class="shop-list sheet-scroll" id="buildList">${repairsAndUpgradesHTML()}</div></div>`;
   m.hidden = false;
-  $('shopClose').onclick = closeModal;
-  const list = $('shopList');
+  $('shopClose').onclick = () => dismissSheet(closeModal);
+  const list = $('buildList');
+  hydrateCosts(list); wireBuildRows(list);
+  makeSheet(m.querySelector('.window'), closeModal);
+  if (night) return;
   const section = (title) => { const h = document.createElement('div'); h.className = 'shop-section'; h.textContent = title; list.appendChild(h); const c = document.createElement('div'); c.className = 'cards'; list.appendChild(c); return c; };
   // buildings picked up earlier and not placed yet
   if ((S.inventory || []).length) {
@@ -2218,7 +2236,7 @@ function openShop() {
     c.appendChild(card);
   }
   const locked = [];
-  for (const [, label, types] of SHOP_TABS) {
+  for (const [, label, types] of SHOP_TABS) {   // new buildings, one section per category
     const entries = types.map(shopEntry);
     locked.push(...entries.filter((e) => e.maxed));
     const open = entries.filter((e) => !e.maxed);
@@ -2231,28 +2249,86 @@ function openShop() {
     const c = section('LOCKED');
     for (const e of locked) c.appendChild(shopCard(e));
   }
+  list.scrollTop = scrollTop;
 }
-function closeModal() { $('modal').hidden = true; $('modal').innerHTML = ''; }
+function closeModal() { sheetDismiss = null; $('modal').hidden = true; $('modal').innerHTML = ''; }
 
 // ----- popups -----
-function popup(title, bodyHTML, buttons, cls) {
+// opts.dismiss: what a swipe down / tap outside does (default: close). null = can't be swiped away.
+function popup(title, bodyHTML, buttons, cls, opts) {
   const m = $('modal');
   m.innerHTML = `<div class="window popup ${cls || ''}" role="dialog" aria-label="${title.replace(/<[^>]+>/g, '')}">
     <div class="window-head"><div class="window-title ol">${title}</div></div>
-    <div class="popup-body">${bodyHTML}<div class="sel-actions" id="popBtns"></div></div></div>`;
+    <div class="popup-body sheet-scroll">${bodyHTML}<div class="sel-actions" id="popBtns"></div></div></div>`;
   const box = $('popBtns');
   for (const [label, cls2, fn] of buttons) {
     const b = document.createElement('button'); b.className = 'btn ' + cls2; b.innerHTML = label; b.onclick = fn; box.appendChild(b);
   }
   hydrateCosts(m);
   m.hidden = false;
-  const first = box.querySelector('button'); if (first) first.focus();
+  makeSheet(m.querySelector('.window'), opts && 'dismiss' in opts ? opts.dismiss : closeModal);
+}
+// ----- bottom sheets: every window slides up from the bottom; swipe it down (or tap outside) to close it -----
+let sheetDismiss = null;
+function makeSheet(win, onDismiss) {
+  const m = $('modal');
+  m.classList.add('sheet-modal');
+  win.classList.add('sheet');
+  win.insertAdjacentHTML('afterbegin', `<div class="sheet-grab${onDismiss ? '' : ' locked'}" aria-hidden="true"><span></span></div>`);
+  sheetDismiss = onDismiss;
+  m.onclick = (e) => { if (e.target === m && onDismiss) dismissSheet(onDismiss); };
+  if (!onDismiss) return;
+  let start = null;
+  const begin = (y) => { start = { y, t: performance.now(), dy: 0 }; win.style.transition = 'none'; };
+  const move = (y) => { if (!start) return false; start.dy = Math.max(0, y - start.y); win.style.transform = `translateY(${start.dy}px)`; return start.dy > 0; };
+  const end = () => {
+    if (!start) return;
+    const v = start.dy / Math.max(1, performance.now() - start.t), far = start.dy > 90 || (v > 0.6 && start.dy > 30);
+    start = null; win.style.transition = '';
+    if (far) dismissSheet(onDismiss); else win.style.transform = '';
+  };
+  // the handle and the header always drag the sheet (mouse or touch)
+  for (const el of [win.querySelector('.sheet-grab'), win.querySelector('.window-head')]) {
+    if (!el) continue;
+    el.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; el.setPointerCapture(e.pointerId); begin(e.clientY); });
+    el.addEventListener('pointermove', (e) => move(e.clientY));
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  }
+  // the content drags it too, when it is scrolled to the top and you pull down
+  let ty = null;
+  win.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.sheet-grab, .window-head')) { ty = null; return; }
+    const sc = e.target.closest('.sheet-scroll');
+    ty = !sc || sc.scrollTop <= 0 ? e.touches[0].clientY : null;
+  }, { passive: true });
+  win.addEventListener('touchmove', (e) => {
+    if (ty == null) return;
+    const y = e.touches[0].clientY;
+    if (!start) { if (y - ty > 8) begin(ty); else { if (y - ty < -4) ty = null; return; } }
+    if (move(y)) e.preventDefault();
+  }, { passive: false });
+  win.addEventListener('touchend', () => { if (ty != null) { ty = null; end(); } });
+}
+function dismissSheet(cb) {
+  const win = $('modal').querySelector('.sheet');
+  sheetDismiss = null;
+  if (!win) { cb(); return; }
+  win.style.transition = 'transform .18s ease-in'; win.style.transform = 'translateY(105%)';
+  setTimeout(cb, 170);
+}
+// a smaller version for the building panel: drag its header down to close it
+function swipeToClose(panel, handle, onClose) {
+  let st = null;
+  handle.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; handle.setPointerCapture(e.pointerId); st = { y: e.clientY, dy: 0 }; panel.style.transition = 'none'; });
+  handle.addEventListener('pointermove', (e) => { if (!st) return; st.dy = Math.max(0, e.clientY - st.y); panel.style.transform = `translateY(${st.dy}px)`; });
+  const end = () => { if (!st) return; const far = st.dy > 60; st = null; panel.style.transition = ''; panel.style.transform = ''; if (far) onClose(); };
+  handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
 }
 function showGameOver(days) {
   clearTimeout(toastTimer); $('toast').classList.remove('show');
   popup('GAME OVER', `<p>Your Town Hall was destroyed on night ${days + 1}. The village has fallen.</p>
     <div class="loot"><div>NIGHTS SURVIVED: ${days}</div><div>BEST: ${Math.max(days, bestDay())}</div></div>`,
-  [['NEW VILLAGE', 'war', () => { closeModal(); newGame(); rebuildBlocked(); centerOn(15, 15); refreshUI(); }]]);
+  [['NEW VILLAGE', 'war', () => { closeModal(); startNewVillage(); }]], '', { dismiss: null });
 }
 function showTitle() {
   const hasSave = load();
@@ -2269,7 +2345,7 @@ function showTitle() {
       <div><span data-ico="shield" data-px="18"></span><span>If your Town Hall falls, the game is over. How many nights can you last?</span></div>
     </div>
     ${best ? `<div class="loot"><div>BEST: ${best} NIGHTS</div></div>` : ''}`,
-  hasSave ? [['NEW', 'no', () => { closeModal(); newGame(); rebuildBlocked(); refreshUI(); }], [`CONTINUE · DAY ${S.day}`, 'go', () => { closeModal(); }]]
+  hasSave ? [['NEW', 'no', () => { closeModal(); startNewVillage(); }], [`CONTINUE · DAY ${S.day}`, 'go', () => { closeModal(); }]]
     : [['PLAY', 'go', () => { closeModal(); }]], 'title-screen');
 }
 function showStats() {
@@ -2295,16 +2371,6 @@ function showStats() {
     <button class="version-link" id="statsVersion">Clash v${GAME_VERSION} · patch notes</button>`, [['Close', 'go', closeModal]], 'stats');
   $('statsVersion').onclick = () => { sfx('click'); showPatchNotes(); };
 }
-// resource styles: tap a resource bar to try the next look
-function cycleResources() {
-  resStyle = (resStyle + 1) % RES_STYLES.length;
-  try { localStorage.setItem(RES_KEY, String(resStyle)); } catch (e) { /* ignore */ }
-  applyResStyle();
-  document.querySelectorAll('canvas[data-icon]').forEach((c) => drawIcon(c, c.dataset.icon));
-  refreshUI();
-  if (selectedId) renderSel(true);
-  toast(`Resources: ${resName('gold')} & ${resName('elixir')} (${resStyle + 1} of ${RES_STYLES.length})`);
-}
 function showPatchNotes() {
   const body = PATCH_NOTES.map((p) => `<section class="patch">
       <h3 class="ol">v${p.v}${p.v === GAME_VERSION ? ' <span class="now">CURRENT</span>' : ''}</h3>
@@ -2314,11 +2380,9 @@ function showPatchNotes() {
   popup('PATCH NOTES', `<div class="patch-list">${body}</div>`, [['CLOSE', 'go', closeModal]], 'notes');
 }
 $('phase').onclick = () => { unlockAudio(); sfx('click'); showStats(); };
-for (const id of ['resGold', 'resElixir']) $(id).onclick = () => { unlockAudio(); sfx('click'); cycleResources(); };
 $('arrangeBtn').onclick = () => { unlockAudio(); sfx('click'); showArrangeMenu(); };
 buildSpellBar();
-$('shopBtn').onclick = () => { unlockAudio(); sfx('click'); openShop(); };
-$('repairAllBtn').onclick = () => { unlockAudio(); sfx('click'); showRepairs(); };
+$('buildBtn').onclick = () => { unlockAudio(); sfx('click'); openBuild(); };
 $('defendBtn').onclick = () => { unlockAudio(); startRaid(); };
 $('speedBtn').onclick = () => { speed = speed === 1 ? 2 : speed === 2 ? 3 : 1; refreshUI(); };
 document.querySelectorAll('canvas[data-icon]').forEach((c) => drawIcon(c, c.dataset.icon));
@@ -2355,7 +2419,10 @@ function sfx(name) {
   const now = performance.now();
   if (now - (lastSfx[name] || 0) < 70) return;
   lastSfx[name] = now;
-  if (name === 'boom') buzz(18);
+  // inside the iOS app, ask it for a native haptic instead of vibrating
+  const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.haptic;
+  if (native && ['boom', 'build', 'nope', 'lose', 'win', 'click'].includes(name)) { try { native.postMessage(name); } catch (e) { /* ignore */ } }
+  else if (name === 'boom') buzz(18);
   else if (name === 'build') buzz(10);
   else if (name === 'nope') buzz([20, 40, 20]);
   else if (name === 'lose') buzz([60, 60, 160]);

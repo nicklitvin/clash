@@ -33,16 +33,16 @@
   </div>
 
   <div class="top-right">
-    <button class="res gold" id="resGold" title="Tap to try another resource style">
+    <div class="res gold" id="resGold" title="Gold">
       <canvas class="ico" data-icon="gold" width="12" height="12"></canvas>
       <div class="track"><div class="fill" id="goldFill"></div><div class="amount ol" id="goldAmt">0</div></div>
       <div class="cap" id="goldCap"></div>
-    </button>
-    <button class="res elixir" id="resElixir" title="Tap to try another resource style">
+    </div>
+    <div class="res elixir" id="resElixir" title="Energy">
       <canvas class="ico" data-icon="elixir" width="12" height="12"></canvas>
       <div class="track"><div class="fill" id="elixirFill"></div><div class="amount ol" id="elixirAmt">0</div></div>
       <div class="cap" id="elixirCap"></div>
-    </button>
+    </div>
   </div>
 
   <!-- Fight on the left; everything for building on the right -->
@@ -54,9 +54,8 @@
 
   <div class="bottom-right">
     <button class="btn round wood" id="speedBtn" hidden aria-label="Game speed">x1</button>
-    <button class="btn go square" id="repairAllBtn" hidden title="Repairs and upgrades"><span class="sq-badge" id="repairAllText" hidden>0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label" id="workLabel">Upgrade</span></button>
     <button class="btn wood square" id="arrangeBtn" hidden aria-label="Arrange: move or pick up buildings and walls" title="Move or pick up buildings and walls"><canvas class="ico" data-icon="move" width="12" height="12" style="width:24px;height:24px"></canvas><span class="sq-label">Arrange</span></button>
-    <button class="btn square shop" id="shopBtn" aria-label="Shop"><canvas class="ico" data-icon="shop" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label">Shop</span></button>
+    <button class="btn square shop" id="buildBtn" aria-label="Build: repairs, upgrades and new buildings"><span class="sq-badge" id="buildBadge" hidden>0</span><canvas class="ico" data-icon="hammer" width="12" height="12" style="width:26px;height:26px"></canvas><span class="sq-label" id="buildLabel">Build</span></button>
   </div>
 
   <div class="bottom-center">

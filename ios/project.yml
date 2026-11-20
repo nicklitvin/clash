@@ -1,0 +1,32 @@
+# XcodeGen spec. Generate the Xcode project with:  brew install xcodegen && cd ios && xcodegen
+name: Clash
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.10.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""          # pick your team in Xcode (Signing & Capabilities)
+targets:
+  Clash:
+    type: application
+    platform: iOS
+    sources:
+      - path: Clash
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.clash
+        INFOPLIST_FILE: Clash/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: NO   # the copy step reads the game files from the parent folder
+    postCompileScripts:
+      - name: Copy web game
+        script: bash "${PROJECT_DIR}/copy-web.sh"
+        basedOnDependencyAnalysis: false
